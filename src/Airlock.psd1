@@ -6,7 +6,7 @@
     Description           = 'Onboarding and offboarding automation for Microsoft Entra ID using the Microsoft Graph PowerShell SDK.'
     PowerShellVersion     = '7.0'
     CompatiblePSEditions  = @('Core')
-    FunctionsToExport     = @()
+    FunctionsToExport     = @('Connect-Airlock')
     CmdletsToExport       = @()
     VariablesToExport     = @()
     AliasesToExport       = @()

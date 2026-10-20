@@ -9,7 +9,7 @@ This README is the spec. Anything not yet built is marked **planned**.
 | Area | Status |
 | --- | --- |
 | Project scaffold and module loader | built |
-| `Connect-Airlock` | planned |
+| `Connect-Airlock` | built, tests written, not yet run (see Testing) |
 | `New-AirlockUser` | planned |
 | `Remove-AirlockUser` | planned |
 | Change log (CSV) | planned |
@@ -22,7 +22,7 @@ This README is the spec. Anything not yet built is marked **planned**.
 
 * PowerShell 7.2 or later
 * Microsoft Graph PowerShell SDK (`Microsoft.Graph.Authentication`, `Microsoft.Graph.Users`, `Microsoft.Graph.Groups`, `Microsoft.Graph.Identity.DirectoryManagement`, `Microsoft.Graph.Users.Actions`, `Microsoft.Graph.Files`)
-* Pester 5 for running the tests
+* Pester 5.3 or later for running the tests
 * A Microsoft 365 test tenant and an app registration (see Setup)
 
 The tests need none of the Graph modules to be signed in. Every Graph call is mocked.
@@ -84,9 +84,9 @@ All commands that change anything accept `-WhatIf` and `-Confirm`.
 
 ## Commands
 
-### Connect-Airlock (planned)
+### Connect-Airlock
 
-Connects to Microsoft Graph with app-only authentication. Reads `AIRLOCK_TENANT_ID`, `AIRLOCK_CLIENT_ID`, and either `AIRLOCK_CERT_THUMBPRINT` or `AIRLOCK_CLIENT_SECRET`. Verifies the token carries the permissions required by the named command.
+Connects to Microsoft Graph with app-only authentication. Reads `AIRLOCK_TENANT_ID`, `AIRLOCK_CLIENT_ID`, and either `AIRLOCK_CERT_THUMBPRINT` or `AIRLOCK_CLIENT_SECRET`. If both a certificate and a secret are set, the certificate is used. Verifies the token carries the permissions required by each command named in `-Command`, and if any is missing it disconnects and fails before any change is attempted. Returns the connection details (tenant, client, auth method, permissions) and never the secret.
 
 ### New-AirlockUser (planned)
 
@@ -155,7 +155,7 @@ A `-WhatIf` run writes the same file with every change recorded as `WhatIf`, so 
 ## Testing
 
 ```powershell
-Install-Module Pester -MinimumVersion 5.0 -Scope CurrentUser
+Install-Module Pester -MinimumVersion 5.3 -Scope CurrentUser
 Invoke-Pester ./tests
 ```
 

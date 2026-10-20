@@ -1,6 +1,9 @@
 #Requires -Version 7.0
 Set-StrictMode -Version Latest
 
+# Set by Connect-Airlock. Holds non-secret connection details only.
+$script:AirlockState = $null
+
 $publicPath = Join-Path -Path $PSScriptRoot -ChildPath 'Public'
 $privatePath = Join-Path -Path $PSScriptRoot -ChildPath 'Private'
 
