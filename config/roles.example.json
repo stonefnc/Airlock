@@ -1,0 +1,19 @@
+{
+  "defaults": {
+    "usageLocation": "US"
+  },
+  "roles": {
+    "engineer": {
+      "groups": ["Engineering", "VPN Users", "Source Access"],
+      "licenseSku": "ENTERPRISEPACK"
+    },
+    "sales": {
+      "groups": ["Sales", "CRM Users"],
+      "licenseSku": "ENTERPRISEPACK"
+    },
+    "contractor": {
+      "groups": ["Contractors"],
+      "licenseSku": "O365_BUSINESS_ESSENTIALS"
+    }
+  }
+}

@@ -1,0 +1,3 @@
+UserPrincipalName,DisplayName,GivenName,Surname,Role,Manager,Department,JobTitle
+ada.example@contoso.example,Ada Example,Ada,Example,engineer,grace.manager@contoso.example,Engineering,Software Engineer
+sam.sample@contoso.example,Sam Sample,Sam,Sample,sales,grace.manager@contoso.example,Sales,Account Executive

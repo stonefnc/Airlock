@@ -1,0 +1,23 @@
+# Secrets and local configuration
+.env
+*.pfx
+*.pem
+*.key
+*.cer
+
+# Real (non-example) config and input files
+config/roles.json
+config/users.csv
+config/*.local.*
+
+# Run output
+logs/
+TestResults/
+testResults.xml
+coverage.xml
+
+# Editor and OS noise
+.vscode/
+.idea/
+Thumbs.db
+.DS_Store
