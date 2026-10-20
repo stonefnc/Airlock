@@ -3,15 +3,63 @@
 # Pester can only mock commands that exist, and the tests must run on a machine
 # that has no Graph SDK and no tenant. So every Graph command the module calls is
 # stubbed here, with the parameters the module uses. The tests then mock these stubs.
+# Each stub uses CmdletBinding so that common parameters such as -ErrorAction bind.
 
 function global:Connect-MgGraph {
+    [CmdletBinding()]
     param($TenantId, $ClientId, $CertificateThumbprint, $ClientSecretCredential, [switch]$NoWelcome)
 }
 function global:Disconnect-MgGraph {
+    [CmdletBinding()]
     param()
 }
 function global:Get-MgContext {
+    [CmdletBinding()]
     param()
+}
+function global:Get-MgUser {
+    [CmdletBinding()]
+    param($UserId, $Filter, $Property, [switch]$All)
+}
+function global:New-MgUser {
+    [CmdletBinding()]
+    param($BodyParameter)
+}
+function global:Update-MgUser {
+    [CmdletBinding()]
+    param($UserId, $BodyParameter)
+}
+function global:Get-MgUserManager {
+    [CmdletBinding()]
+    param($UserId)
+}
+function global:Set-MgUserManagerByRef {
+    [CmdletBinding()]
+    param($UserId, $BodyParameter)
+}
+function global:Get-MgGroup {
+    [CmdletBinding()]
+    param($Filter, $Property, [switch]$All)
+}
+function global:Get-MgGroupMember {
+    [CmdletBinding()]
+    param($GroupId, [switch]$All)
+}
+function global:New-MgGroupMemberByRef {
+    [CmdletBinding()]
+    param($GroupId, $BodyParameter)
+}
+function global:Get-MgSubscribedSku {
+    [CmdletBinding()]
+    param([switch]$All)
+}
+function global:Set-MgUserLicense {
+    [CmdletBinding()]
+    param($UserId, $BodyParameter)
+}
+function global:Get-MgUserDefaultDrive {
+    [CmdletBinding()]
+    param($UserId)
 }
 
 function global:Import-AirlockForTest {
@@ -19,12 +67,46 @@ function global:Import-AirlockForTest {
     Import-Module -Name (Resolve-Path -LiteralPath $manifest).Path -Force
 }
 
+# Puts the module into a connected state without calling Graph.
+function global:Set-AirlockTestConnection {
+    param([string[]]$Command = @('New-AirlockUser', 'Remove-AirlockUser'))
+
+    InModuleScope Airlock -Parameters @{ Command = $Command } -ScriptBlock {
+        param($Command)
+        $script:AirlockState = [pscustomobject]@{
+            TenantId     = '22222222-2222-2222-2222-222222222222'
+            ClientId     = '11111111-1111-1111-1111-111111111111'
+            AuthMethod   = 'Certificate'
+            Commands     = @($Command)
+            Permissions  = @()
+            LogDirectory = $null
+            ConnectedAt  = [datetime]::UtcNow
+        }
+    }
+}
+
 function global:Remove-AirlockTestStubs {
-    $stubNames = @('Connect-MgGraph', 'Disconnect-MgGraph', 'Get-MgContext')
+    $stubNames = @(
+        'Connect-MgGraph'
+        'Disconnect-MgGraph'
+        'Get-MgContext'
+        'Get-MgUser'
+        'New-MgUser'
+        'Update-MgUser'
+        'Get-MgUserManager'
+        'Set-MgUserManagerByRef'
+        'Get-MgGroup'
+        'Get-MgGroupMember'
+        'New-MgGroupMemberByRef'
+        'Get-MgSubscribedSku'
+        'Set-MgUserLicense'
+        'Get-MgUserDefaultDrive'
+        'Import-AirlockForTest'
+        'Set-AirlockTestConnection'
+        'Remove-AirlockTestStubs'
+    )
     foreach ($name in $stubNames) {
         Remove-Item -Path "Function:\global:$name" -ErrorAction SilentlyContinue
     }
-    Remove-Item -Path 'Function:\global:Import-AirlockForTest' -ErrorAction SilentlyContinue
-    Remove-Item -Path 'Function:\global:Remove-AirlockTestStubs' -ErrorAction SilentlyContinue
     Remove-Module -Name Airlock -Force -ErrorAction SilentlyContinue
 }

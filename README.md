@@ -10,7 +10,7 @@ This README is the spec. Anything not yet built is marked **planned**.
 | --- | --- |
 | Project scaffold and module loader | built |
 | `Connect-Airlock` | built, tests written, not yet run (see Testing) |
-| `New-AirlockUser` | planned |
+| `New-AirlockUser` | built, tests written, not yet run (see Testing) |
 | `Remove-AirlockUser` | planned |
 | Change log (CSV) | planned |
 | Pester test suite (all Graph calls mocked) | planned |
@@ -88,19 +88,38 @@ All commands that change anything accept `-WhatIf` and `-Confirm`.
 
 Connects to Microsoft Graph with app-only authentication. Reads `AIRLOCK_TENANT_ID`, `AIRLOCK_CLIENT_ID`, and either `AIRLOCK_CERT_THUMBPRINT` or `AIRLOCK_CLIENT_SECRET`. If both a certificate and a secret are set, the certificate is used. Verifies the token carries the permissions required by each command named in `-Command`, and if any is missing it disconnects and fails before any change is attempted. Returns the connection details (tenant, client, auth method, permissions) and never the secret.
 
-### New-AirlockUser (planned)
+### New-AirlockUser
 
-Accepts one user through parameters or many through `-CsvPath`. For each user it:
+Accepts one user through parameters or many through `-CsvPath`. Run `Connect-Airlock -Command New-AirlockUser` first. For each user it:
 
-1. Creates the Entra ID user if it does not exist.
-2. Adds the user to the groups mapped to the role in `roles.json`.
-3. Assigns the license mapped to the role.
-4. Sets the manager if one is given.
-5. Checks whether the OneDrive has been provisioned and reports `Ready` or `Pending`. A pending OneDrive is normal for a new license and is not treated as a failure.
+1. Looks up everything it needs before changing anything: the user, the manager, each group in the role, and the license SKU with its free unit count.
+2. Creates the Entra ID user if it does not exist.
+3. Sets the manager if one is given.
+4. Adds the user to the groups mapped to the role in `roles.json`.
+5. Assigns the license mapped to the role.
+6. Checks whether the OneDrive has been provisioned.
 
-The command is idempotent. Re-running it for an existing user does not create a second user, does not duplicate group membership, and does not reassign a license that is already present. Each such step is logged as `Skipped`.
+A new account gets a random 20 character temporary password and must change it at first sign-in. The password is returned once on the result as a `SecureString` named `TemporaryPassword` and is never written to the change log. Pass it to the new user through your approved channel. It is not recoverable afterwards.
 
-A user whose role is missing from `roles.json` is rejected before anything is created. In CSV mode a bad row is logged as `Failed` with the reason, and processing continues with the next row.
+The command is idempotent. Re-running it for an existing user does not create a second user, does not duplicate group membership, does not reset the manager if it is already correct, and does not reassign a license that is already present. Each such step is recorded as `Skipped`. If an existing user has no usage location, one is set from `defaults.usageLocation` before the license is assigned. Dynamic membership groups are skipped because their members are set by rule.
+
+Because all lookups happen first, these problems fail that user without changing anything: a role that is not in `roles.json`, a group that is missing or whose name matches more than one group, a manager that does not exist, a license SKU the tenant does not have, and no free units left for the license. In a CSV the free units are counted down as users are processed, so a large file cannot run past the licenses available. A problem with one row never stops the other rows. A failure while applying a step (for example one group that cannot be added) is recorded, the remaining steps still run, and that user is reported as `Failed`.
+
+The OneDrive check is best effort and never blocks onboarding. It reports `Ready`, `Pending` (the drive is not provisioned yet, which is normal just after a license is assigned), `Unknown` (the check itself failed, for example for lack of permission) or `NotChecked` (the role has no license, or this is a preview of a user that does not exist yet).
+
+With `-WhatIf` nothing is changed. The lookups still run, so the preview reflects the real state of the tenant, and each planned change is recorded as `WhatIf`.
+
+Each user produces one result object:
+
+| Property | Meaning |
+| --- | --- |
+| `UserPrincipalName`, `Role` | As supplied |
+| `Outcome` | `Created`, `Existing`, `WhatIf` or `Failed` |
+| `Created` | True if this run created the account |
+| `OneDrive` | `Ready`, `Pending`, `Unknown` or `NotChecked` |
+| `TemporaryPassword` | A `SecureString`, only when this run created the account |
+| `Error` | The first failure, if any |
+| `Actions` | The change log entries for this user, in order (see Change log) |
 
 ### Remove-AirlockUser (planned)
 
@@ -138,7 +157,9 @@ The account is not deleted.
 
 ## Change log (planned)
 
-Every run writes one CSV file to `./logs` (or `AIRLOCK_LOG_DIR`) named `airlock-<command>-<yyyyMMdd-HHmmss>.csv`. One row is written per action. Columns:
+Status: the entries described here are already recorded in memory and returned on each result as `Actions`. Writing them to the CSV file below is planned.
+
+Every run will write one CSV file to `./logs` (or `AIRLOCK_LOG_DIR`) named `airlock-<command>-<yyyyMMdd-HHmmss>.csv`. One row is written per action. Columns:
 
 | Column | Meaning |
 | --- | --- |
@@ -147,7 +168,7 @@ Every run writes one CSV file to `./logs` (or `AIRLOCK_LOG_DIR`) named `airlock-
 | Command | The Airlock command that ran |
 | Target | The user principal name acted on |
 | Action | For example `CreateUser`, `AddGroup`, `AssignLicense`, `BlockSignIn` |
-| Status | `Applied`, `Skipped`, `WhatIf`, or `Failed` |
+| Status | `Applied`, `Skipped`, `WhatIf`, `Failed`, or `Info` (a check that changes nothing, such as the OneDrive check) |
 | Detail | Group name, license SKU, error text, or manager, depending on the action |
 
 A `-WhatIf` run writes the same file with every change recorded as `WhatIf`, so the plan can be reviewed or attached to an approval ticket before the real run. The `logs` directory is git-ignored.
