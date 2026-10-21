@@ -8,24 +8,24 @@ This README is the spec. Anything not yet built is marked **planned**.
 
 ## Status
 
-The onboarding and offboarding MVP is written. It has not yet been run against a tenant, and the Pester suite has been written but not yet executed. See Testing for exactly what has and has not been checked.
+The onboarding and offboarding MVP is written and its Pester suite passes. It has not yet been run against a tenant. See Testing for exactly what has and has not been checked.
 
 | Area | Status |
 | --- | --- |
 | Project scaffold and module loader | built |
-| `Connect-Airlock` | built, tests written, not yet run (see Testing) |
-| `New-AirlockUser` | built, tests written, not yet run (see Testing) |
-| `Remove-AirlockUser` | built, tests written, not yet run (see Testing) |
-| Change log (CSV) | built, tests written, not yet run (see Testing) |
-| Pester test suite (all Graph calls mocked) | written, not yet run |
+| `Connect-Airlock` | built, tests pass (see Testing) |
+| `New-AirlockUser` | built, tests pass (see Testing) |
+| `Remove-AirlockUser` | built, tests pass (see Testing) |
+| Change log (CSV) | built, tests pass (see Testing) |
+| Pester test suite (all Graph calls mocked) | passes (see Testing) |
 | `docs/permissions.md` | built, with a list of items to verify in a test tenant |
-| OneDrive handover to the manager at offboarding (grants access, optional) | built, tests written, not yet run, the Graph calls are unconfirmed (see Testing) |
-| Directory role removal at offboarding (optional) | built, tests written, not yet run, the Graph calls are unconfirmed (see Testing) |
-| Group ownership transfer or removal at offboarding (optional) | built, tests written, not yet run, one Graph call is documented as unsupported for apps (see `docs/permissions.md`) |
+| OneDrive handover to the manager at offboarding (grants access, optional) | built, tests pass, the Graph calls are unconfirmed (see Testing) |
+| Directory role removal at offboarding (optional) | built, tests pass, the Graph calls are unconfirmed (see Testing) |
+| Group ownership transfer or removal at offboarding (optional) | built, tests pass, one Graph call is documented as unsupported for apps (see `docs/permissions.md`) |
 | Removal of Privileged Identity Management eligible roles, and of application or service principal ownership | planned |
-| Intune compliance report (`Get-AirlockComplianceReport`, read only) | built, tests written, not yet run, the Graph call is unconfirmed (see Testing) |
-| Stale device report (`Get-AirlockStaleDevice`, read only) | built, tests written, not yet run, the Graph call is unconfirmed (see Testing) |
-| License usage report (`Get-AirlockLicenseUsage`, read only) | built, tests written, not yet run, the Graph call is unconfirmed (see Testing) |
+| Intune compliance report (`Get-AirlockComplianceReport`, read only) | built, tests pass, the Graph call is unconfirmed (see Testing) |
+| Stale device report (`Get-AirlockStaleDevice`, read only) | built, tests pass, the Graph call is unconfirmed (see Testing) |
+| License usage report (`Get-AirlockLicenseUsage`, read only) | built, tests pass, the Graph call is unconfirmed (see Testing) |
 
 ## Quick start
 
@@ -280,12 +280,7 @@ The tests mock every Graph call and do not need a tenant, a network connection, 
 
 ### What has and has not been checked
 
-The Pester suite was written on a machine that has only Windows PowerShell 5.1 and Pester 3.4, so it has **not been run**. What was checked there:
-
-* Every script in the repository parses without error.
-* The module functions were run under Windows PowerShell 5.1 against stand-in Graph functions, and the same scenarios as the tests behaved as described in this README.
-
-That is evidence the logic is right. It is not a passing Pester run. The first run of `Invoke-Pester` on PowerShell 7 with Pester 5.3 may well turn up small problems in the test files, such as mock scoping. The module itself has also never been run against a real tenant. `docs/permissions.md` lists what the mocks cannot confirm and what to verify in a test tenant first.
+The Pester suite has been run and passes on PowerShell 7.6.7 with Pester 5.7.1. Every Graph call is mocked, so a pass shows that the module logic and its handling of Graph responses are right. It does not show that the Graph calls themselves behave as the mocks assume. The module has never been run against a real tenant. `docs/permissions.md` lists what the mocks cannot confirm and what to verify in a test tenant first.
 
 ## Known limitations
 
