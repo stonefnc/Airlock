@@ -21,7 +21,7 @@ function Get-AirlockManagerInfo {
     }
     catch {
         $message = $_.Exception.Message
-        if ($message -match 'ResourceNotFound|NotFound|404|not found|does not exist') {
+        if ($message -match 'ResourceNotFound|NotFound|\b404\b|not found|does not exist') {
             return $none
         }
         $none.Error = $message

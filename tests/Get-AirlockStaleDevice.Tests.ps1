@@ -51,7 +51,7 @@ Describe 'Get-AirlockStaleDevice' {
     It 'returns device, platform, owner and days, longest silent first' {
         Mock -ModuleName Airlock Get-MgDeviceManagementManagedDevice -MockWith {
             New-FakeDevice 'PC-A' ([datetime]::UtcNow.AddDays(-45)) -Os 'Windows' -Owner 'ada.example@contoso.example'
-            New-FakeDevice 'PH-B' ([datetime]::UtcNow.AddDays(-90)) -Os 'iOS' -Owner ''
+            New-FakeDevice 'PH-B' ([datetime]::UtcNow.AddDays(-90).AddMinutes(-5)) -Os 'iOS' -Owner ''
         }
 
         $result = @(Get-AirlockStaleDevice)

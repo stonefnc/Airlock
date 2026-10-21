@@ -50,7 +50,7 @@ function Invoke-AirlockStep {
         return [pscustomobject]@{ Status = 'Declined'; Result = $null }
     }
 
-    $replicationPattern = 'does not exist|do not exist|don''t exist|ResourceNotFound|NotFound|404|not found'
+    $replicationPattern = 'does not exist|do not exist|don''t exist|ResourceNotFound|NotFound|\b404\b|not found'
     $pauses = @(2, 4, 8, 16)
     $retries = 0
     $stepOutput = $null

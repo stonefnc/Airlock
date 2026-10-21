@@ -184,14 +184,15 @@ function Invoke-AirlockOffboarding {
 
     $userId = [string]$user.Id
 
-    # Record who receives the OneDrive. The handover itself is a manual step.
+    # Record who receives the OneDrive. The access is granted by the HandOverOneDrive
+    # step below, which is optional, so this entry only says who the recipient is.
     if ($manager.Found) {
         $recipient = $manager.UserPrincipalName
         if (-not $recipient) {
             $recipient = $manager.Id
         }
         $result.OneDriveRecipient = $recipient
-        Add-AirlockLogEntry -Run $Run -Target $target -Action 'RecordOneDriveRecipient' -Status 'Info' -Detail "$recipient. The manager receives the OneDrive content. Hand it over manually."
+        Add-AirlockLogEntry -Run $Run -Target $target -Action 'RecordOneDriveRecipient' -Status 'Info' -Detail "$recipient. The manager receives the OneDrive content. The HandOverOneDrive entry says whether access was granted."
     }
     elseif ($manager.Error) {
         Add-AirlockLogEntry -Run $Run -Target $target -Action 'RecordOneDriveRecipient' -Status 'Info' -Detail "The manager could not be read: $($manager.Error)"

@@ -333,6 +333,27 @@ Describe 'Invoke-AirlockOneDriveHandover' {
             $run.Entries[0].Detail | Should -Match 'simulated lookup failure'
         }
 
+        It 'does not read a refusal as "no OneDrive" just because its request id contains 404' {
+            $global:DriveFake.DriveError = 'Authorization_RequestDenied: Insufficient privileges. Request-Id: 9a1f2c3d-4040-4b7e-8a11-0123456789ab'
+            $run = New-StepRun
+
+            Invoke-DriveStep -Run $run
+
+            Should -Invoke -CommandName Invoke-MgInviteDriveItem -ModuleName Airlock -Times 0 -Exactly
+            $run.Entries[0].Status | Should -Be 'Failed'
+            $run.Entries[0].Detail | Should -Match 'could not be looked up'
+        }
+
+        It 'still reads a plain 404 status as "no OneDrive"' {
+            $global:DriveFake.DriveError = 'Response status code does not indicate success: 404.'
+            $run = New-StepRun
+
+            Invoke-DriveStep -Run $run
+
+            $run.Entries[0].Status | Should -Be 'Skipped'
+            $run.Entries[0].Detail | Should -Match 'no OneDrive'
+        }
+
         It 'shares nothing when the current access cannot be read, because it cannot check what is already there' {
             $global:DriveFake.FailList = $true
             $run = New-StepRun

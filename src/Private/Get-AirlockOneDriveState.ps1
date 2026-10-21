@@ -20,7 +20,7 @@ function Get-AirlockOneDriveState {
     }
     catch {
         $message = $_.Exception.Message
-        if ($message -match 'itemNotFound|ResourceNotFound|NotFound|404|not found') {
+        if ($message -match 'itemNotFound|ResourceNotFound|NotFound|\b404\b|not found') {
             return [pscustomobject]@{ State = 'Pending'; Detail = 'OneDrive is not provisioned yet' }
         }
         return [pscustomobject]@{ State = 'Unknown'; Detail = "OneDrive check failed: $message" }

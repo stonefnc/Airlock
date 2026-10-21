@@ -145,7 +145,9 @@ function Invoke-AirlockOneDriveHandover {
     }
     catch {
         $message = $_.Exception.Message
-        if ($message -match 'itemNotFound|ResourceNotFound|NotFound|404|not found') {
+        # 404 is matched as a whole number only. A request id or timestamp in the text of
+        # a refusal can contain those digits, and a refusal must not read as "no OneDrive".
+        if ($message -match 'itemNotFound|ResourceNotFound|NotFound|\b404\b|not found') {
             Add-AirlockLogEntry -Run $Run -Target $Target -Action 'HandOverOneDrive' -Status 'Skipped' -Detail 'The user has no OneDrive, so there is nothing to hand over.'
         }
         else {

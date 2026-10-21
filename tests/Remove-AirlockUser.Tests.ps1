@@ -288,7 +288,8 @@ Describe 'Remove-AirlockUser' {
             $entry = $result.Actions | Where-Object { $_.Action -eq 'RecordOneDriveRecipient' }
             $entry.Status | Should -Be 'Info'
             $entry.Detail | Should -Match ([regex]::Escape($script:ManagerUpn))
-            $entry.Detail | Should -Match 'manually'
+            $entry.Detail | Should -Match 'HandOverOneDrive'
+            $entry.Detail | Should -Not -Match 'manually'
         }
 
         It 'reads the manager address from AdditionalProperties when that is where Graph puts it' {
