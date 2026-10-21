@@ -29,6 +29,15 @@ function Get-AirlockRequiredPermission {
             'GroupMember.ReadWrite.All'
             'LicenseAssignment.ReadWrite.All'
         )
+        'Get-AirlockLicenseUsage' = @(
+            'LicenseAssignment.Read.All'
+        )
+        'Get-AirlockComplianceReport' = @(
+            'DeviceManagementManagedDevices.Read.All'
+        )
+        'Get-AirlockStaleDevice' = @(
+            'DeviceManagementManagedDevices.Read.All'
+        )
     }
 
     $result = foreach ($name in $Command) {
@@ -64,6 +73,9 @@ function Get-AirlockOptionalPermission {
             [pscustomobject]@{ Permission = 'Files.Read.All'; WithoutIt = 'New-AirlockUser skips the OneDrive check and reports it as NotChecked' }
         )
         'Remove-AirlockUser' = @()
+        'Get-AirlockLicenseUsage' = @()
+        'Get-AirlockComplianceReport' = @()
+        'Get-AirlockStaleDevice' = @()
     }
 
     $result = foreach ($name in $Command) {

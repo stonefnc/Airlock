@@ -74,6 +74,10 @@ function global:Get-MgSubscribedSku {
     [CmdletBinding()]
     param([switch]$All)
 }
+function global:Get-MgDeviceManagementManagedDevice {
+    [CmdletBinding()]
+    param([switch]$All)
+}
 function global:Set-MgUserLicense {
     [CmdletBinding()]
     param($UserId, $BodyParameter)
@@ -151,6 +155,7 @@ function global:Remove-AirlockTestStubs {
         'Get-MgGroupMember'
         'New-MgGroupMemberByRef'
         'Get-MgSubscribedSku'
+        'Get-MgDeviceManagementManagedDevice'
         'Set-MgUserLicense'
         'Get-MgUserDefaultDrive'
         'Revoke-MgUserSignInSession'

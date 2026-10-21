@@ -12,16 +12,19 @@ The Graph documentation was checked on 2026-10-20. Items that are marked **verif
 
 ## Summary
 
-| Permission | `New-AirlockUser` | `Remove-AirlockUser` |
-| --- | :---: | :---: |
-| `User.ReadWrite.All` | yes | yes |
-| `Group.Read.All` | yes | no |
-| `GroupMember.ReadWrite.All` | yes | yes |
-| `LicenseAssignment.Read.All` | yes | no |
-| `LicenseAssignment.ReadWrite.All` | yes | yes |
-| `Files.Read.All` | optional (verify) | no |
-| `User.RevokeSessions.All` | no | yes |
-| `Directory.Read.All` | no | yes |
+| Permission | `New-AirlockUser` | `Remove-AirlockUser` | `Get-AirlockLicenseUsage` | `Get-AirlockComplianceReport` | `Get-AirlockStaleDevice` |
+| --- | :---: | :---: | :---: | :---: | :---: |
+| `User.ReadWrite.All` | yes | yes | no | no | no |
+| `Group.Read.All` | yes | no | no | no | no |
+| `GroupMember.ReadWrite.All` | yes | yes | no | no | no |
+| `LicenseAssignment.Read.All` | yes | no | yes (verify) | no | no |
+| `LicenseAssignment.ReadWrite.All` | yes | yes | no | no | no |
+| `Files.Read.All` | optional (verify) | no | no | no | no |
+| `User.RevokeSessions.All` | no | yes | no | no | no |
+| `Directory.Read.All` | no | yes | no | no | no |
+| `DeviceManagementManagedDevices.Read.All` | no | no | no | yes (verify) | yes (verify) |
+
+The reporting commands only read. They never write to the tenant, so a report-only registration can hold read permissions and nothing else.
 
 Grant only the column for the commands you will run. The two commands need different sets, so the safest setup is two app registrations, one for onboarding and one for offboarding, each with its own certificate. Then a problem with one credential cannot be used for the other job.
 
@@ -67,6 +70,33 @@ Group memberships are removed with `Remove-MgGroupMemberByRef`. A review of the 
 
 For application access, listing another user's group memberships requires `Directory.Read.All`, according to the Graph documentation. There is no narrower application permission for that call. `Directory.Read.All` lets the app read most of the directory, so it is the main reason to keep offboarding on its own app registration with a certificate that is protected and rotated.
 
+## Get-AirlockLicenseUsage
+
+Read only. Reports total, assigned and available units for each license SKU.
+
+| Permission | Why it is needed | Graph calls (SDK command) |
+| --- | --- | --- |
+| `LicenseAssignment.Read.All` | Read each SKU's purchased and consumed units. **Verify** that this is the least privileged application permission for the call. The Microsoft Learn page for listing subscribed SKUs also lists `Directory.Read.All`, which is broader | `GET /subscribedSkus` (`Get-MgSubscribedSku`) |
+
+Total is the enabled prepaid units, Assigned is the consumed units, and Available is the difference.
+## Get-AirlockComplianceReport
+
+Read only. Reports Intune device compliance grouped by platform.
+
+| Permission | Why it is needed | Graph calls (SDK command) |
+| --- | --- | --- |
+| `DeviceManagementManagedDevices.Read.All` | Read each managed device's operating system and compliance state. **Verify** that this is the least privileged application permission for the call | `GET /deviceManagement/managedDevices` (`Get-MgDeviceManagementManagedDevice`) |
+
+The platform is the device's `operatingSystem` value, and a device with none is reported as `Unknown`. The compliance states counted are `compliant`, `noncompliant`, `inGracePeriod` and `unknown`. Any other state is counted as `Other`. The Graph PowerShell SDK command lives in the `Microsoft.Graph.DeviceManagement` module, so install it alongside the other Graph modules.
+## Get-AirlockStaleDevice
+
+Read only. Lists Intune managed devices whose last check-in is older than `-Days` days (default 30).
+
+| Permission | Why it is needed | Graph calls (SDK command) |
+| --- | --- | --- |
+| `DeviceManagementManagedDevices.Read.All` | Read each managed device's last sync time, operating system and primary user. **Verify** that this is the least privileged application permission for the call | `GET /deviceManagement/managedDevices` (`Get-MgDeviceManagementManagedDevice`) |
+
+A device is stale when `lastSyncDateTime` is more than `-Days` days in the past. A device whose last sync is exactly that old is not listed. A device that has never synced is always listed, with an empty last sync and days value. Owner is the device's `userPrincipalName` and is empty when Intune has no primary user. Intune can report a user other than the person who uses the device day to day, so treat Owner as a lead and not a fact. The call is the same one `Get-AirlockComplianceReport` makes.
 ## What Airlock does not ask for
 
 No permission to read mail, files, calendars or chat. No permission to delete users, reset passwords, or change directory roles. `Files.Read.All` is the only permission that reads file data, and it is optional: it is used only to ask whether a OneDrive exists, and the check is skipped if it is not granted.
@@ -91,6 +121,10 @@ The unit tests mock every Graph call, so they cannot tell you any of the followi
 5. The Graph PowerShell SDK command and parameter names match what the code calls: `-BodyParameter` on the write commands, `Get-MgUserDefaultDrive`, `Get-MgUserMemberOfAsGroup`, `Remove-MgGroupMemberByRef -DirectoryObjectId` (see the note above about a possible different name), `Revoke-MgUserSignInSession`. The tests replace these commands with stand-ins, so a renamed command or parameter would only show up against a live tenant. Do this against the exact SDK version you intend to pin.
 6. Reading the token back works. Airlock calls `Invoke-MgGraphRequest -OutputType HttpResponseMessage` and reads `RequestMessage.Headers.Authorization.Parameter`, and expects a token whose `roles` claim lists the granted application permissions. This is a widely used technique, but it has not been confirmed against SDK version 2 here. If it fails, Airlock falls back to the context scopes and then to a warning, so it cannot block a sign-in by itself, but the permission check would not be doing its job.
 7. A fresh user becomes visible to the manager, group and license calls within the retry window (2, 4, 8 and 16 seconds). If your tenant is slower, widen the pauses in `Invoke-AirlockStep`.
+
+8. `LicenseAssignment.Read.All` is enough for `GET /subscribedSkus` with app-only access, as `Get-AirlockLicenseUsage` needs. The cmdlet has not been run against a live tenant, and its tests mock Graph.
+
+9. `DeviceManagementManagedDevices.Read.All` is enough for `GET /deviceManagement/managedDevices` with app-only access, and `Get-MgDeviceManagementManagedDevice -All` and the property names `OperatingSystem`, `ComplianceState`, `UserPrincipalName` and `LastSyncDateTime` match the SDK version you pin. `Get-AirlockComplianceReport` and `Get-AirlockStaleDevice` have not been run against a live tenant, and their tests mock Graph. Also confirm that Intune returns the minimum date for a device that never synced, which the stale report reads as never checked in.
 
 ### Resolved
 

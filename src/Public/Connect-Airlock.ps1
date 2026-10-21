@@ -27,7 +27,7 @@ function Connect-Airlock {
     [OutputType([pscustomobject])]
     param(
         [Parameter(Mandatory)]
-        [ValidateSet('New-AirlockUser', 'Remove-AirlockUser')]
+        [ValidateSet('New-AirlockUser', 'Remove-AirlockUser', 'Get-AirlockLicenseUsage', 'Get-AirlockComplianceReport', 'Get-AirlockStaleDevice')]
         [string[]]$Command,
 
         [string]$EnvPath
