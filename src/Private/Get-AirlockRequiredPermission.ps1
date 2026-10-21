@@ -57,6 +57,10 @@ function Get-AirlockOptionalPermission {
     .DESCRIPTION
         A missing optional permission never stops Connect-Airlock. It produces one
         warning, and the command skips the feature that needs it.
+        The offboarding permissions here are all higher privilege than the rest and
+        are optional on purpose: directory role removal, group ownership changes and
+        the OneDrive handover only happen if the app registration was given the
+        permission, so granting it is an explicit decision.
         Files.Read.All is optional because Microsoft documents the OneDrive lookup as
         not supported for application permissions, so a tenant must still be able to
         onboard users without it.
@@ -72,7 +76,11 @@ function Get-AirlockOptionalPermission {
         'New-AirlockUser'    = @(
             [pscustomobject]@{ Permission = 'Files.Read.All'; WithoutIt = 'New-AirlockUser skips the OneDrive check and reports it as NotChecked' }
         )
-        'Remove-AirlockUser' = @()
+        'Remove-AirlockUser' = @(
+            [pscustomobject]@{ Permission = 'RoleManagement.ReadWrite.Directory'; WithoutIt = 'Remove-AirlockUser does not remove directory roles' }
+            [pscustomobject]@{ Permission = 'Group.ReadWrite.All'; WithoutIt = 'Remove-AirlockUser does not transfer or remove group ownership' }
+            [pscustomobject]@{ Permission = 'Files.ReadWrite.All'; WithoutIt = 'Remove-AirlockUser does not hand the OneDrive to the manager' }
+        )
         'Get-AirlockLicenseUsage' = @()
         'Get-AirlockComplianceReport' = @()
         'Get-AirlockStaleDevice' = @()

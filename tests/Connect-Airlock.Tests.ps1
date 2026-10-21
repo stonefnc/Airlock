@@ -58,7 +58,7 @@ BeforeAll {
     # Every required permission plus the optional one, so ordinary tests see no warning.
     $script:AllRoles = @(InModuleScope Airlock {
             Get-AirlockRequiredPermission -Command 'New-AirlockUser', 'Remove-AirlockUser'
-        }) + 'Files.Read.All'
+        }) + @('Files.Read.All', 'RoleManagement.ReadWrite.Directory', 'Group.ReadWrite.All', 'Files.ReadWrite.All')
 }
 
 AfterAll {
@@ -303,8 +303,21 @@ Describe 'Get-AirlockOptionalPermission' {
         $optional[0].WithoutIt | Should -Match 'OneDrive'
     }
 
-    It 'lists nothing for offboarding' {
-        @(InModuleScope Airlock { Get-AirlockOptionalPermission -Command 'Remove-AirlockUser' }).Count | Should -Be 0
+    It 'lists the three higher privilege permissions for offboarding, with what is lost without each' {
+        $optional = @(InModuleScope Airlock { Get-AirlockOptionalPermission -Command 'Remove-AirlockUser' })
+
+        @($optional | ForEach-Object { $_.Permission }) | Should -Be @('Files.ReadWrite.All', 'Group.ReadWrite.All', 'RoleManagement.ReadWrite.Directory')
+        ($optional | Where-Object { $_.Permission -eq 'RoleManagement.ReadWrite.Directory' }).WithoutIt | Should -Match 'directory roles'
+        ($optional | Where-Object { $_.Permission -eq 'Group.ReadWrite.All' }).WithoutIt | Should -Match 'ownership'
+        ($optional | Where-Object { $_.Permission -eq 'Files.ReadWrite.All' }).WithoutIt | Should -Match 'OneDrive'
+    }
+
+    It 'never lists an offboarding permission as required' {
+        $required = InModuleScope Airlock { Get-AirlockRequiredPermission -Command 'Remove-AirlockUser' }
+
+        $required | Should -Not -Contain 'RoleManagement.ReadWrite.Directory'
+        $required | Should -Not -Contain 'Group.ReadWrite.All'
+        $required | Should -Not -Contain 'Files.ReadWrite.All'
     }
 
     It 'throws for an unknown command' {
@@ -469,6 +482,28 @@ Describe 'Connect-Airlock' {
 
             @($result.OptionalPermissionsMissing).Count | Should -Be 0
             @($connectWarning).Count | Should -Be 0
+        }
+
+        It 'connects for offboarding without the higher privilege permissions, and warns once naming each feature that is off' {
+            Set-TokenRole -Role @($script:AllRoles | Where-Object { $_ -notin 'RoleManagement.ReadWrite.Directory', 'Group.ReadWrite.All', 'Files.ReadWrite.All' })
+
+            $result = Connect-Airlock -Command Remove-AirlockUser -EnvPath $script:EmptyEnvFile -WarningVariable connectWarning -WarningAction SilentlyContinue
+
+            $result.PermissionsChecked | Should -BeTrue
+            @($result.OptionalPermissionsMissing | Sort-Object) | Should -Be @('Files.ReadWrite.All', 'Group.ReadWrite.All', 'RoleManagement.ReadWrite.Directory')
+            @($connectWarning).Count | Should -Be 1
+            ($connectWarning -join ' ') | Should -Match 'directory roles'
+            ($connectWarning -join ' ') | Should -Match 'group ownership'
+            ($connectWarning -join ' ') | Should -Match 'OneDrive'
+            Should -Invoke -CommandName Disconnect-MgGraph -ModuleName Airlock -Times 0 -Exactly
+        }
+
+        It 'records only the offboarding permission that is missing' {
+            Set-TokenRole -Role @($script:AllRoles | Where-Object { $_ -ne 'Group.ReadWrite.All' })
+
+            $result = Connect-Airlock -Command Remove-AirlockUser -EnvPath $script:EmptyEnvFile -WarningAction SilentlyContinue
+
+            @($result.OptionalPermissionsMissing) | Should -Be @('Group.ReadWrite.All')
         }
 
         It 'does not warn about an optional permission for a command that does not use it' {

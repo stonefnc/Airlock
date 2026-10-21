@@ -98,6 +98,46 @@ function global:Remove-MgGroupMemberByRef {
     [CmdletBinding()]
     param($GroupId, $DirectoryObjectId)
 }
+function global:Get-MgRoleManagementDirectoryRoleAssignment {
+    [CmdletBinding()]
+    param($Filter, [switch]$All)
+}
+function global:Get-MgRoleManagementDirectoryRoleDefinition {
+    [CmdletBinding()]
+    param([switch]$All)
+}
+function global:Remove-MgRoleManagementDirectoryRoleAssignment {
+    [CmdletBinding()]
+    param($UnifiedRoleAssignmentId)
+}
+function global:Get-MgUserOwnedObjectAsGroup {
+    [CmdletBinding()]
+    param($UserId, $Property, [switch]$All)
+}
+function global:Get-MgGroupOwner {
+    [CmdletBinding()]
+    param($GroupId, [switch]$All)
+}
+function global:New-MgGroupOwnerByRef {
+    [CmdletBinding()]
+    param($GroupId, $BodyParameter)
+}
+function global:Remove-MgGroupOwnerDirectoryObjectByRef {
+    [CmdletBinding()]
+    param($GroupId, $DirectoryObjectId)
+}
+function global:Remove-MgGroupOwnerByRef {
+    [CmdletBinding()]
+    param($GroupId, $DirectoryObjectId)
+}
+function global:Get-MgDriveItemPermission {
+    [CmdletBinding()]
+    param($DriveId, $DriveItemId, [switch]$All)
+}
+function global:Invoke-MgInviteDriveItem {
+    [CmdletBinding()]
+    param($DriveId, $DriveItemId, $BodyParameter)
+}
 
 function global:Import-AirlockForTest {
     $manifest = Join-Path -Path $PSScriptRoot -ChildPath '..' -AdditionalChildPath 'src', 'Airlock.psd1'
@@ -161,6 +201,16 @@ function global:Remove-AirlockTestStubs {
         'Revoke-MgUserSignInSession'
         'Get-MgUserMemberOfAsGroup'
         'Remove-MgGroupMemberByRef'
+        'Get-MgRoleManagementDirectoryRoleAssignment'
+        'Get-MgRoleManagementDirectoryRoleDefinition'
+        'Remove-MgRoleManagementDirectoryRoleAssignment'
+        'Get-MgUserOwnedObjectAsGroup'
+        'Get-MgGroupOwner'
+        'New-MgGroupOwnerByRef'
+        'Remove-MgGroupOwnerDirectoryObjectByRef'
+        'Remove-MgGroupOwnerByRef'
+        'Get-MgDriveItemPermission'
+        'Invoke-MgInviteDriveItem'
         'Import-AirlockForTest'
         'Set-AirlockTestConnection'
         'Remove-AirlockTestStubs'
