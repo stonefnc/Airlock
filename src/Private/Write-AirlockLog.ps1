@@ -64,11 +64,19 @@ function Write-AirlockLog {
                 }
             })
 
+        # UTF-8 with a byte order mark, so Excel shows names such as Zoe with a diaeresis
+        # correctly. PowerShell 7 calls this utf8BOM. Windows PowerShell's UTF8 already
+        # writes the mark, and only matters for the checks that run the code there.
+        $encoding = 'UTF8'
+        if ($PSVersionTable.PSVersion.Major -ge 6) {
+            $encoding = 'utf8BOM'
+        }
+
         if ($rows.Count -eq 0) {
-            Set-Content -LiteralPath $Run.LogPath -Value '"Timestamp","RunId","Command","Target","Action","Status","Detail"' -Encoding UTF8 -ErrorAction Stop
+            Set-Content -LiteralPath $Run.LogPath -Value '"Timestamp","RunId","Command","Target","Action","Status","Detail"' -Encoding $encoding -ErrorAction Stop
         }
         else {
-            $rows | Export-Csv -LiteralPath $Run.LogPath -NoTypeInformation -Encoding UTF8 -ErrorAction Stop
+            $rows | Export-Csv -LiteralPath $Run.LogPath -NoTypeInformation -Encoding $encoding -ErrorAction Stop
         }
     }
     catch {

@@ -95,6 +95,32 @@ Describe 'Write-AirlockLog' {
         @(Import-Csv -LiteralPath $run.LogPath).Count | Should -Be 0
     }
 
+    It 'writes UTF-8 with a byte order mark so Excel reads non-ASCII names' {
+        $run = New-TestRun -Directory (Join-Path -Path $TestDrive -ChildPath 'bom')
+        $name = 'Zo' + [char]0x00EB + ' M' + [char]0x00FC + 'ller ' + [char]0x00D8 + 'stergaard'
+        Add-TestEntry -Run $run -Target 'zoe.muller@contoso.example' -Detail $name
+
+        Write-TestLog -Run $run | Out-Null
+
+        $bytes = [System.IO.File]::ReadAllBytes($run.LogPath)
+        $bytes[0] | Should -Be 0xEF
+        $bytes[1] | Should -Be 0xBB
+        $bytes[2] | Should -Be 0xBF
+        @(Import-Csv -LiteralPath $run.LogPath)[0].Detail | Should -Be $name
+        [System.Text.Encoding]::UTF8.GetString($bytes) | Should -Match ([regex]::Escape($name))
+    }
+
+    It 'writes the byte order mark on a header only file too' {
+        $run = New-TestRun -Directory (Join-Path -Path $TestDrive -ChildPath 'bomempty')
+
+        Write-TestLog -Run $run | Out-Null
+
+        $bytes = [System.IO.File]::ReadAllBytes($run.LogPath)
+        $bytes[0] | Should -Be 0xEF
+        $bytes[1] | Should -Be 0xBB
+        $bytes[2] | Should -Be 0xBF
+    }
+
     It 'round trips commas, quotes and line breaks in a value' {
         $run = New-TestRun -Directory (Join-Path -Path $TestDrive -ChildPath 'quoting')
         $detail = "Group ""A, B"" failed`nsecond line"
