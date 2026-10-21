@@ -29,7 +29,7 @@ The onboarding and offboarding MVP is written. It has not yet been run against a
 1. Install PowerShell 7.2 or later, the Graph SDK (version 2) and Pester:
 
    ```powershell
-   Install-Module Microsoft.Graph.Authentication, Microsoft.Graph.Users, Microsoft.Graph.Users.Actions, Microsoft.Graph.Groups, Microsoft.Graph.Identity.DirectoryManagement, Microsoft.Graph.Files -Scope CurrentUser
+   Install-Module Microsoft.Graph.Authentication, Microsoft.Graph.Users, Microsoft.Graph.Users.Actions, Microsoft.Graph.Groups, Microsoft.Graph.Identity.DirectoryManagement, Microsoft.Graph.Files -MinimumVersion 2.0.0 -Scope CurrentUser
    Install-Module Pester -MinimumVersion 5.3 -Scope CurrentUser
    ```
 
@@ -60,7 +60,7 @@ $results | Select-Object UserPrincipalName, Outcome, OneDrive, LogPath
 ## Requirements
 
 * PowerShell 7.2 or later
-* Microsoft Graph PowerShell SDK (`Microsoft.Graph.Authentication`, `Microsoft.Graph.Users`, `Microsoft.Graph.Groups`, `Microsoft.Graph.Identity.DirectoryManagement`, `Microsoft.Graph.Users.Actions`, `Microsoft.Graph.Files`)
+* Microsoft Graph PowerShell SDK **2.0.0 or later** (`Microsoft.Graph.Authentication`, `Microsoft.Graph.Users`, `Microsoft.Graph.Groups`, `Microsoft.Graph.Identity.DirectoryManagement`, `Microsoft.Graph.Users.Actions`, `Microsoft.Graph.Files`). Version 2 is the floor because the code uses `Connect-MgGraph -NoWelcome` and the version 2 command names. No particular 2.x release has been tested yet, so once you have validated one in your test tenant, pin that exact version. Command names can change between SDK releases, see `docs/permissions.md`.
 * Pester 5.3 or later for running the tests
 * A Microsoft 365 test tenant and an app registration (see Setup)
 
@@ -69,7 +69,7 @@ The tests need none of the Graph modules to be signed in. Every Graph call is mo
 ## Setup
 
 1. Register an application in your test tenant and add a certificate (preferred) or a client secret.
-2. Grant the application permissions listed in `docs/permissions.md` and give admin consent. Grant only what you plan to use. Onboarding and offboarding need different permission sets.
+2. Grant the application permissions listed in `docs/permissions.md` and give admin consent. Grant only what you plan to use. Onboarding and offboarding need different permission sets. `Files.Read.All` is optional: without it onboarding skips the OneDrive check and reports it as `NotChecked`.
 3. Copy `.env.example` to `.env` and fill in the tenant ID, client ID, and either a certificate thumbprint or a client secret. `.env` is git-ignored.
 4. Copy `config/roles.example.json` to `config/roles.json` and edit it to match your groups and license SKUs.
 
@@ -140,11 +140,15 @@ Accepts one user through parameters or many through `-CsvPath`. Run `Connect-Air
 
 A new account gets a random 20 character temporary password and must change it at first sign-in. The password is returned once on the result as a `SecureString` named `TemporaryPassword` and is never written to the change log. Pass it to the new user through your approved channel. It is not recoverable afterwards.
 
-The command is idempotent. Re-running it for an existing user does not create a second user, does not duplicate group membership, does not reset the manager if it is already correct, and does not reassign a license that is already present. Each such step is recorded as `Skipped`. If an existing user has no usage location, one is set from `defaults.usageLocation` before the license is assigned. Dynamic membership groups are skipped because their members are set by rule.
+The command is idempotent. Re-running it for an existing user does not create a second user, does not duplicate group membership, does not reset the manager if it is already correct, and does not reassign a license that is already present. Each such step is recorded as `Skipped`. If an existing user has no usage location, one is set from `defaults.usageLocation` before the license is assigned.
+
+Some groups cannot be changed through Graph, so Airlock works this out in the lookups and records them as `Skipped` with the reason, instead of failing after the user has been created. They are: groups with dynamic membership (members are set by rule), groups synced from an on-premises directory, and mail-enabled groups that are not Microsoft 365 groups, which means distribution lists and mail-enabled security groups (managed in Exchange). Microsoft 365 groups are mail-enabled but can be changed, so they are added normally. The user does not end up in a skipped group, so check the log if a role maps to one of these types.
+
+A new Entra user can take a few seconds to become visible to the calls that follow. When the account was created in this run, Airlock retries the manager, group and license calls if Graph says the object does not exist, pausing 2, 4, 8 and then 16 seconds. If it still fails the log says so and tells you to run the command again, which finishes the job without repeating anything.
 
 Because all lookups happen first, these problems fail that user without changing anything: a role that is not in `roles.json`, a group that is missing or whose name matches more than one group, a manager that does not exist, a license SKU the tenant does not have, and no free units left for the license. In a CSV the free units are counted down as users are processed, so a large file cannot run past the licenses available. A problem with one row never stops the other rows. A failure while applying a step (for example one group that cannot be added) is recorded, the remaining steps still run, and that user is reported as `Failed`.
 
-The OneDrive check is best effort and never blocks onboarding. It reports `Ready`, `Pending` (the drive is not provisioned yet, which is normal just after a license is assigned), `Unknown` (the check itself failed, for example for lack of permission) or `NotChecked` (the role has no license, or this is a preview of a user that does not exist yet).
+The OneDrive check is best effort and never blocks onboarding. It reports `Ready`, `Pending` (the drive is not provisioned yet, which is normal just after a license is assigned), `Unknown` (the check itself failed, for example for lack of permission) or `NotChecked` (the role has no license, this is a preview of a user that does not exist yet, or `Files.Read.All` is not granted to the app, in which case `Connect-Airlock` warns once). Microsoft documents the underlying call as not supported for application permissions, which is why the permission is optional and why this needs checking in a test tenant.
 
 With `-WhatIf` nothing is changed. The lookups still run, so the preview reflects the real state of the tenant, and each planned change is recorded as `WhatIf`.
 
@@ -153,7 +157,7 @@ Each user produces one result object:
 | Property | Meaning |
 | --- | --- |
 | `UserPrincipalName`, `Role` | As supplied |
-| `Outcome` | `Created`, `Existing`, `WhatIf` or `Failed` |
+| `Outcome` | `Created`, `Existing`, `WhatIf`, `Declined` or `Failed`. `Declined` means a step was declined at a `-Confirm` prompt, see `Actions` for which |
 | `Created` | True if this run created the account |
 | `OneDrive` | `Ready`, `Pending`, `Unknown` or `NotChecked` |
 | `TemporaryPassword` | A `SecureString`, only when this run created the account |
@@ -180,19 +184,21 @@ Some things cannot be removed through Graph and are skipped with the reason in t
 
 * Groups with dynamic membership, because their members are set by rule.
 * Groups synced from an on-premises directory, which must be changed there.
-* Mail-enabled distribution lists, which are managed in Exchange.
+* Mail-enabled groups that are not Microsoft 365 groups, that is distribution lists and mail-enabled security groups, which are managed in Exchange.
 * A license that comes from a group. It is removed when the group membership is removed. If a license is assigned both directly and through a group, only the direct assignment is removed.
 
 Directory roles, group ownership and administrative unit membership are not changed. Blocking sign-in already stops the account from using them, but check them as part of your offboarding checklist. Removing them is planned.
 
 With `-WhatIf` nothing is changed. The lookups still run, so the preview reflects the real state of the tenant. Without `-WhatIf` the command does not prompt by default. Use `-WhatIf` first, or add `-Confirm` to be asked before each step.
 
+The names are read from the pipeline first and processed once the input ends, so the results appear together at the end. This is so the change log is always written, even if the run is stopped with Ctrl+C or ends with an unexpected error.
+
 Each user produces one result object:
 
 | Property | Meaning |
 | --- | --- |
 | `UserPrincipalName` | As supplied |
-| `Outcome` | `Offboarded`, `AlreadyOffboarded`, `WhatIf` or `Failed` |
+| `Outcome` | `Offboarded`, `AlreadyOffboarded`, `WhatIf`, `Declined` or `Failed`. `Declined` means a step was declined at a `-Confirm` prompt, so the user is not fully offboarded, see `Actions` |
 | `OneDriveRecipient` | The manager who receives the OneDrive content, or empty |
 | `Error` | The first failure, if any |
 | `Actions` | The change log entries for this user, in order (see Change log) |
@@ -228,12 +234,12 @@ Every run writes one CSV file to `./logs` (or `AIRLOCK_LOG_DIR`, created if it d
 | Command | The Airlock command that ran |
 | Target | The user principal name acted on |
 | Action | For example `CreateUser`, `AddGroup`, `AssignLicense`, `BlockSignIn` |
-| Status | `Applied`, `Skipped`, `WhatIf`, `Failed`, or `Info` (a check that changes nothing, such as the OneDrive check) |
+| Status | `Applied`, `Skipped` (already in place, or cannot be changed, with the reason), `WhatIf`, `Failed`, `Declined` (declined at a `-Confirm` prompt), or `Info` (a check that changes nothing, such as the OneDrive check) |
 | Detail | Group name, license SKU, error text, or manager, depending on the action |
 
 A `-WhatIf` run writes the same file with every change recorded as `WhatIf`, so the plan can be reviewed or attached to an approval ticket before the real run. Previews are logged because a preview is the log you most want to attach.
 
-The log never contains the temporary password or any secret. Values that begin with `=`, `+`, `-` or `@` are written with a leading apostrophe so that a spreadsheet does not read them as a formula. If the log file cannot be written, for example because the folder is read only, a warning is shown and the results of the run are still returned. The `logs` directory is git-ignored.
+The file is UTF-8 with a byte order mark, so Excel shows names with accents correctly. The log never contains the temporary password or any secret. Values that begin with `=`, `+`, `-` or `@` are written with a leading apostrophe so that a spreadsheet does not read them as a formula. If the log file cannot be written, for example because the folder is read only, a warning is shown and the results of the run are still returned. The `logs` directory is git-ignored.
 
 ## Testing
 
@@ -264,7 +270,9 @@ That is evidence the logic is right. It is not a passing Pester run. The first r
 * Offboarding does not remove directory roles, group ownership or administrative unit membership. Check these as part of your offboarding checklist.
 * The OneDrive content is not handed over. The manager is recorded as the recipient so it can be done from the ticket.
 * Onboarding checks existing group membership by reading each group's members. For a very large group this is slow when the user already exists.
-* Groups that can be assigned to Entra roles, dynamic groups, groups synced from on-premises, and mail-enabled distribution lists cannot be changed through these calls. They are skipped or recorded as failed, with the reason in the log.
+* Groups that can be assigned to Entra roles, dynamic groups, groups synced from on-premises, and mail-enabled groups that are not Microsoft 365 groups cannot be changed through these calls. They are skipped or recorded as failed, with the reason in the log. A role that maps a user to one of them leaves the user outside that group.
+* The permission check reads the app roles from the access token by making one small request and reading the token back from it. That has not been confirmed against a live tenant. If it fails, Airlock falls back to the context scopes and then to a warning, so it never blocks a login by itself.
+* The Graph SDK command for removing a group member may have a different name in some SDK releases, see `docs/permissions.md`.
 * A user principal name containing a character outside letters, digits and `. _ % + ! # ^ ~ ' -` is rejected.
 * The Graph PowerShell SDK command and parameter names are not confirmed against a live tenant yet.
 
@@ -283,5 +291,7 @@ logs/                change logs written at run time (git-ignored)
 ```
 
 ## Data and safety
+
+**Do not run onboarding with `-Debug` or `-Verbose`, or with debug output turned on in the Graph SDK, unless you will throw the output away.** Those switches can print request bodies, and the request that creates a user contains its temporary password. The password is kept out of the change log and out of Airlock's own messages, but it cannot be kept out of output that the SDK itself prints.
 
 Use a test tenant. The examples use the reserved `contoso.example` domain and fictional names. Never commit `.env`, certificates, real role maps, or real user lists. The `.gitignore` excludes them.
