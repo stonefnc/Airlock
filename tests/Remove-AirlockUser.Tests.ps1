@@ -263,13 +263,20 @@ Describe 'Remove-AirlockUser' {
             @($global:OffMemberOf['u-ada']).Count | Should -Be 0
         }
 
+        # The three optional steps find nothing to do in this fake tenant, so each is
+        # recorded as Skipped. The end to end tests for them are in
+        # Remove-AirlockUser.Steps.Tests.ps1.
         It 'does the steps in a safe order and records the OneDrive recipient first' {
             Add-TypicalLeaver
 
             $result = Remove-AirlockUser -UserPrincipalName $script:AdaUpn
 
             $order = @($result.Actions | ForEach-Object { $_.Action } | Select-Object -Unique)
-            $order | Should -Be @('RecordOneDriveRecipient', 'BlockSignIn', 'RevokeSessions', 'RemoveLicense', 'RemoveGroup')
+            $order | Should -Be @(
+                'RecordOneDriveRecipient', 'BlockSignIn', 'RevokeSessions'
+                'RemoveDirectoryRole', 'HandOverOneDrive', 'RemoveGroupOwner'
+                'RemoveLicense', 'RemoveGroup'
+            )
         }
 
         It 'records the manager as the OneDrive recipient' {

@@ -49,13 +49,29 @@ function Invoke-AirlockOffboarding {
         Offboards one user: look up, record the manager, then apply.
     .DESCRIPTION
         Steps, in order: record the manager who receives the OneDrive, block sign-in,
-        revoke sessions, remove directly assigned licenses, remove group memberships.
+        revoke sessions, remove directory roles, hand the OneDrive to the manager,
+        take the user out of the groups they own, remove directly assigned licenses,
+        remove group memberships.
+        The order is deliberate. Privilege goes first (sign-in, sessions, roles). The
+        OneDrive is handed over before the licenses are removed, because removing a
+        license is what starts a OneDrive being cleaned up. Ownership is moved before
+        membership is removed.
         Each step checks the current state first, so a second run changes nothing and
         records Skipped. Revoking sessions cannot be checked, so it runs only when
         something else is still to be done for the user. A failed step is recorded and
         the remaining steps still run, because a half offboarded account is the worse
         outcome. The account is not deleted.
+        The directory role, OneDrive handover and group ownership steps are optional.
+        They read from the tenant when they run, they are skipped with the reason
+        recorded if the app lacks the permission or the operator passed -SkipStep, and
+        a failed read in one of them is recorded for that step only.
         Returns a result object and does not throw for a problem with one user.
+    .PARAMETER Options
+        SkipStep (steps to skip), OwnershipAction (TransferToManager or Remove) and
+        OptionalPermissionsMissing (permissions Connect-Airlock saw were not granted).
+        The default runs every step in the safe mode.
+    .PARAMETER RoleNames
+        Directory role definition id to display name, for the log. Optional.
     #>
     [CmdletBinding()]
     [OutputType([pscustomobject])]
@@ -70,7 +86,11 @@ function Invoke-AirlockOffboarding {
         [hashtable]$SkuNames,
 
         [Parameter(Mandatory)]
-        [hashtable]$Seen
+        [hashtable]$Seen,
+
+        $Options = [pscustomobject]@{ SkipStep = @(); OwnershipAction = 'TransferToManager'; OptionalPermissionsMissing = @() },
+
+        [hashtable]$RoleNames = @{}
     )
 
     $upn = $UserPrincipalName.Trim()
@@ -203,6 +223,12 @@ function Invoke-AirlockOffboarding {
     else {
         Add-AirlockLogEntry -Run $Run -Target $target -Action 'RevokeSessions' -Status 'Skipped' -Detail 'Nothing left to offboard, so sessions were not revoked again'
     }
+
+    # Optional steps. Each one gates itself, reads when it runs, and records its own
+    # outcome, so a failure in one never stops the next.
+    Invoke-AirlockRoleRemoval -Run $Run -Target $target -UserId $userId -Options $Options -RoleNames $RoleNames
+    Invoke-AirlockOneDriveHandover -Run $Run -Target $target -UserId $userId -Manager $manager -Options $Options
+    Invoke-AirlockOwnershipTransfer -Run $Run -Target $target -UserId $userId -Manager $manager -Options $Options
 
     # Remove licenses that were assigned directly.
     if ($directSkus.Count -gt 0) {
