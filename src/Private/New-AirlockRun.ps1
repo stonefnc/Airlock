@@ -15,15 +15,26 @@ function New-AirlockRun {
         [Parameter(Mandatory)]
         $Cmdlet,
 
-        [bool]$IsWhatIf = $false
+        [bool]$IsWhatIf = $false,
+
+        [string]$LogDirectory
     )
 
+    if ([string]::IsNullOrWhiteSpace($LogDirectory)) {
+        $LogDirectory = Join-Path -Path (Get-Location).Path -ChildPath 'logs'
+    }
+
+    $runId = [guid]::NewGuid().ToString()
+    $startedAt = [datetime]::UtcNow
+    $fileName = 'airlock-{0}-{1}-{2}.csv' -f $Command.ToLowerInvariant(), $startedAt.ToString('yyyyMMdd-HHmmss'), $runId.Substring(0, 8)
+
     [pscustomobject]@{
-        RunId     = [guid]::NewGuid().ToString()
+        RunId     = $runId
         Command   = $Command
-        StartedAt = [datetime]::UtcNow
+        StartedAt = $startedAt
         IsWhatIf  = $IsWhatIf
         Cmdlet    = $Cmdlet
+        LogPath   = Join-Path -Path $LogDirectory -ChildPath $fileName
         Entries   = [System.Collections.Generic.List[object]]::new()
     }
 }

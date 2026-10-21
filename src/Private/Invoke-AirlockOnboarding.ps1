@@ -87,6 +87,7 @@ function Invoke-AirlockOnboarding {
         OneDrive          = 'NotChecked'
         TemporaryPassword = $null
         Error             = $null
+        LogPath           = $Run.LogPath
         Actions           = @()
     }
 

@@ -81,17 +81,30 @@ function global:Import-AirlockForTest {
 
 # Puts the module into a connected state without calling Graph.
 function global:Set-AirlockTestConnection {
-    param([string[]]$Command = @('New-AirlockUser', 'Remove-AirlockUser'))
+    param(
+        [string[]]$Command = @('New-AirlockUser', 'Remove-AirlockUser'),
+        [string]$LogDirectory
+    )
 
-    InModuleScope Airlock -Parameters @{ Command = $Command } -ScriptBlock {
-        param($Command)
+    # Logs go to the Pester TestDrive unless a test names a folder, so a test run
+    # never writes into the repository.
+    if (-not $LogDirectory) {
+        $drive = Get-Variable -Name TestDrive -ValueOnly -ErrorAction SilentlyContinue
+        if (-not $drive) {
+            $drive = [System.IO.Path]::GetTempPath()
+        }
+        $LogDirectory = Join-Path -Path $drive -ChildPath 'airlock-logs'
+    }
+
+    InModuleScope Airlock -Parameters @{ Command = $Command; LogDirectory = $LogDirectory } -ScriptBlock {
+        param($Command, $LogDirectory)
         $script:AirlockState = [pscustomobject]@{
             TenantId     = '22222222-2222-2222-2222-222222222222'
             ClientId     = '11111111-1111-1111-1111-111111111111'
             AuthMethod   = 'Certificate'
             Commands     = @($Command)
             Permissions  = @()
-            LogDirectory = $null
+            LogDirectory = $LogDirectory
             ConnectedAt  = [datetime]::UtcNow
         }
     }

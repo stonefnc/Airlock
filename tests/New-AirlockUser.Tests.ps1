@@ -680,6 +680,67 @@ Describe 'New-AirlockUser' {
         }
     }
 
+    Context 'change log' {
+        It 'writes one CSV for the run and puts its path on the result' {
+            $result = New-AirlockUser -UserPrincipalName $script:AdaUpn -DisplayName 'Ada Example' -Role engineer `
+                -Manager $script:ManagerUpn -RolesPath $script:RolesFile
+
+            $result.LogPath | Should -Exist
+            $rows = @(Import-Csv -LiteralPath $result.LogPath)
+            $rows.Count | Should -Be $result.Actions.Count
+            @($rows | ForEach-Object { $_.Command } | Select-Object -Unique) | Should -Be 'New-AirlockUser'
+            @($rows | ForEach-Object { $_.RunId } | Select-Object -Unique).Count | Should -Be 1
+            ($rows | Where-Object { $_.Action -eq 'CreateUser' }).Status | Should -Be 'Applied'
+            @($rows | Where-Object { $_.Action -eq 'AddGroup' -and $_.Status -eq 'Applied' }).Count | Should -Be 3
+        }
+
+        It 'never writes the temporary password to the file' {
+            $result = New-AirlockUser -UserPrincipalName $script:AdaUpn -DisplayName 'Ada Example' -Role engineer -RolesPath $script:RolesFile
+            $plain = ConvertTo-PlainText -Secure $result.TemporaryPassword
+
+            $plain.Length | Should -BeGreaterOrEqual 12
+            (Get-Content -LiteralPath $result.LogPath -Raw) | Should -Not -Match ([regex]::Escape($plain))
+        }
+
+        It 'writes the log for a WhatIf run and records the plan as WhatIf' {
+            $result = New-AirlockUser -UserPrincipalName $script:AdaUpn -DisplayName 'Ada Example' -Role engineer -RolesPath $script:RolesFile -WhatIf
+
+            $result.LogPath | Should -Exist
+            $rows = @(Import-Csv -LiteralPath $result.LogPath)
+            @($rows | Where-Object { $_.Status -eq 'WhatIf' }).Count | Should -BeGreaterThan 0
+            @($rows | Where-Object { $_.Status -eq 'Applied' }).Count | Should -Be 0
+        }
+
+        It 'writes one file for a whole CSV run with a row per action for every user' {
+            $file = Join-Path -Path $TestDrive -ChildPath 'logged.csv'
+            Set-Content -LiteralPath $file -Value @(
+                'UserPrincipalName,DisplayName,Role'
+                'one@contoso.example,One,nolicense'
+                'two@contoso.example,Two,wizard'
+            )
+
+            $results = @(New-AirlockUser -CsvPath $file -RolesPath $script:RolesFile)
+
+            @($results | ForEach-Object { $_.LogPath } | Select-Object -Unique).Count | Should -Be 1
+            $rows = @(Import-Csv -LiteralPath $results[0].LogPath)
+            $rows.Count | Should -Be (($results | ForEach-Object { $_.Actions.Count } | Measure-Object -Sum).Sum)
+            ($rows | Where-Object { $_.Target -eq 'two@contoso.example' }).Status | Should -Be 'Failed'
+        }
+
+        It 'still returns the results when the log folder cannot be used' {
+            $blocker = Join-Path -Path $TestDrive -ChildPath 'blocker-file'
+            Set-Content -LiteralPath $blocker -Value 'a file, not a folder'
+            Set-AirlockTestConnection -LogDirectory (Join-Path -Path $blocker -ChildPath 'logs')
+
+            $result = New-AirlockUser -UserPrincipalName $script:AdaUpn -DisplayName 'Ada Example' -Role engineer `
+                -RolesPath $script:RolesFile -WarningVariable logWarning -WarningAction SilentlyContinue
+
+            $result.Outcome | Should -Be 'Created'
+            ($logWarning -join ' ') | Should -Match 'could not be written'
+            $result.LogPath | Should -Not -Exist
+        }
+    }
+
     Context 'CSV input' {
         It 'processes good rows and reports bad rows without stopping' {
             $file = Join-Path -Path $TestDrive -ChildPath 'mixed.csv'

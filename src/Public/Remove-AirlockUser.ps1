@@ -22,6 +22,9 @@ function Remove-AirlockUser {
 
         Returns one result object per user. A problem with one user does not stop the
         others, and a failed step does not stop the remaining steps for that user.
+
+        Every run writes one change log CSV, also under -WhatIf. Its path is on each
+        result as LogPath.
     .PARAMETER UserPrincipalName
         One or more user principal names. Accepts pipeline input, including objects
         that have a UserPrincipalName property such as rows from Import-Csv.
@@ -39,9 +42,9 @@ function Remove-AirlockUser {
     )
 
     begin {
-        $null = Get-AirlockState -Command 'Remove-AirlockUser'
+        $state = Get-AirlockState -Command 'Remove-AirlockUser'
 
-        $run = New-AirlockRun -Command 'Remove-AirlockUser' -Cmdlet $PSCmdlet -IsWhatIf ([bool]$WhatIfPreference)
+        $run = New-AirlockRun -Command 'Remove-AirlockUser' -Cmdlet $PSCmdlet -IsWhatIf ([bool]$WhatIfPreference) -LogDirectory $state.LogDirectory
         $seen = [hashtable]::new([System.StringComparer]::OrdinalIgnoreCase)
 
         # Names for the log only. If this fails the log shows SKU ids instead.
@@ -60,5 +63,9 @@ function Remove-AirlockUser {
         foreach ($upn in $UserPrincipalName) {
             Invoke-AirlockOffboarding -Run $run -UserPrincipalName $upn -SkuNames $skuNames -Seen $seen
         }
+    }
+
+    end {
+        $null = Write-AirlockLog -Run $run
     }
 }

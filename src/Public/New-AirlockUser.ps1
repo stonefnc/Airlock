@@ -18,6 +18,9 @@ function New-AirlockUser {
 
         Returns one result object per user. Problems with one user, or one CSV row,
         are reported on its result and do not stop the other users.
+
+        Every run writes one change log CSV, also under -WhatIf. Its path is on each
+        result as LogPath.
     .PARAMETER UserPrincipalName
         Sign-in name of the new user, for example ada.example@contoso.example.
     .PARAMETER DisplayName
@@ -70,7 +73,7 @@ function New-AirlockUser {
         [string]$RolesPath
     )
 
-    $null = Get-AirlockState -Command 'New-AirlockUser'
+    $state = Get-AirlockState -Command 'New-AirlockUser'
 
     $roleMap = Import-AirlockRoleMap -Path $RolesPath
 
@@ -91,11 +94,16 @@ function New-AirlockUser {
             })
     }
 
-    $run = New-AirlockRun -Command 'New-AirlockUser' -Cmdlet $PSCmdlet -IsWhatIf ([bool]$WhatIfPreference)
+    $run = New-AirlockRun -Command 'New-AirlockUser' -Cmdlet $PSCmdlet -IsWhatIf ([bool]$WhatIfPreference) -LogDirectory $state.LogDirectory
     $skuTable = Get-AirlockSkuTable
     $seen = [hashtable]::new([System.StringComparer]::OrdinalIgnoreCase)
 
-    foreach ($spec in $specs) {
-        Invoke-AirlockOnboarding -Run $run -Spec $spec -RoleMap $roleMap -SkuTable $skuTable -Seen $seen
+    try {
+        foreach ($spec in $specs) {
+            Invoke-AirlockOnboarding -Run $run -Spec $spec -RoleMap $roleMap -SkuTable $skuTable -Seen $seen
+        }
+    }
+    finally {
+        $null = Write-AirlockLog -Run $run
     }
 }

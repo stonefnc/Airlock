@@ -584,6 +584,57 @@ Describe 'Remove-AirlockUser' {
         }
     }
 
+    Context 'change log' {
+        It 'writes one CSV for the run, including the OneDrive recipient row' {
+            Add-TypicalLeaver
+
+            $result = Remove-AirlockUser -UserPrincipalName $script:AdaUpn
+
+            $result.LogPath | Should -Exist
+            $rows = @(Import-Csv -LiteralPath $result.LogPath)
+            $rows.Count | Should -Be $result.Actions.Count
+            @($rows | ForEach-Object { $_.Command } | Select-Object -Unique) | Should -Be 'Remove-AirlockUser'
+            $recipient = $rows | Where-Object { $_.Action -eq 'RecordOneDriveRecipient' }
+            $recipient.Status | Should -Be 'Info'
+            $recipient.Detail | Should -Match ([regex]::Escape($script:ManagerUpn))
+        }
+
+        It 'writes the log for a WhatIf run and records the plan as WhatIf' {
+            Add-TypicalLeaver
+
+            $result = Remove-AirlockUser -UserPrincipalName $script:AdaUpn -WhatIf
+
+            $result.LogPath | Should -Exist
+            $rows = @(Import-Csv -LiteralPath $result.LogPath)
+            @($rows | Where-Object { $_.Status -eq 'WhatIf' }).Count | Should -Be 6
+            @($rows | Where-Object { $_.Status -eq 'Applied' }).Count | Should -Be 0
+        }
+
+        It 'writes a single file for several users from the pipeline' {
+            Add-TypicalLeaver
+            Add-FakeUser -Upn 'sam.sample@contoso.example' -Id 'u-sam'
+
+            $results = @('ada.example@contoso.example', 'sam.sample@contoso.example', 'ghost@contoso.example' | Remove-AirlockUser)
+
+            @($results | ForEach-Object { $_.LogPath } | Select-Object -Unique).Count | Should -Be 1
+            $rows = @(Import-Csv -LiteralPath $results[0].LogPath)
+            @($rows | ForEach-Object { $_.Target } | Select-Object -Unique).Count | Should -Be 3
+            ($rows | Where-Object { $_.Target -eq 'ghost@contoso.example' }).Status | Should -Be 'Failed'
+        }
+
+        It 'still returns the results when the log folder cannot be used' {
+            Add-TypicalLeaver
+            $blocker = Join-Path -Path $TestDrive -ChildPath 'blocker-file'
+            Set-Content -LiteralPath $blocker -Value 'a file, not a folder'
+            Set-AirlockTestConnection -LogDirectory (Join-Path -Path $blocker -ChildPath 'logs')
+
+            $result = Remove-AirlockUser -UserPrincipalName $script:AdaUpn -WarningVariable logWarning -WarningAction SilentlyContinue
+
+            $result.Outcome | Should -Be 'Offboarded'
+            ($logWarning -join ' ') | Should -Match 'could not be written'
+        }
+    }
+
     Context 'several users' {
         It 'processes an array and carries on past a user that cannot be found' {
             Add-TypicalLeaver

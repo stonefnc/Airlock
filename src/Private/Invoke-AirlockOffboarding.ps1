@@ -79,6 +79,7 @@ function Invoke-AirlockOffboarding {
         Outcome           = 'Failed'
         OneDriveRecipient = $null
         Error             = $null
+        LogPath           = $Run.LogPath
         Actions           = @()
     }
 
