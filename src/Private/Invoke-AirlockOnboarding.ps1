@@ -54,6 +54,7 @@ function Invoke-AirlockOnboarding {
         throw for a problem with one user, the problem is recorded in the result and in
         the run log so a CSV run can carry on with the next row.
     #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingConvertToSecureStringWithPlainText', '', Justification = 'The temporary password is generated here as text because Graph needs it as text in the create request. It is wrapped once so it can be returned to the caller as a SecureString and is never logged.')]
     [CmdletBinding()]
     [OutputType([pscustomobject])]
     param(

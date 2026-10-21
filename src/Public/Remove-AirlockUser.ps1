@@ -24,7 +24,11 @@ function Remove-AirlockUser {
         others, and a failed step does not stop the remaining steps for that user.
 
         Every run writes one change log CSV, also under -WhatIf. Its path is on each
-        result as LogPath.
+        result as LogPath. The log is written even if the run is stopped part way or
+        ends with an unexpected error.
+
+        Names are collected from the pipeline first and processed once the input ends,
+        so results appear together at the end and not one at a time.
     .PARAMETER UserPrincipalName
         One or more user principal names. Accepts pipeline input, including objects
         that have a UserPrincipalName property such as rows from Import-Csv.
@@ -46,6 +50,7 @@ function Remove-AirlockUser {
 
         $run = New-AirlockRun -Command 'Remove-AirlockUser' -Cmdlet $PSCmdlet -IsWhatIf ([bool]$WhatIfPreference) -LogDirectory $state.LogDirectory
         $seen = [hashtable]::new([System.StringComparer]::OrdinalIgnoreCase)
+        $queue = [System.Collections.Generic.List[string]]::new()
 
         # Names for the log only. If this fails the log shows SKU ids instead.
         $skuNames = [hashtable]::new([System.StringComparer]::OrdinalIgnoreCase)
@@ -60,12 +65,23 @@ function Remove-AirlockUser {
     }
 
     process {
+        # Only collect here. The work is done in end{}, inside try/finally, because the
+        # change log must be written even when the run is stopped with Ctrl+C or hits
+        # an unexpected terminating error. An end block that is not wrapped would be
+        # skipped, and a finally block per pipeline item would write one file per user.
         foreach ($upn in $UserPrincipalName) {
-            Invoke-AirlockOffboarding -Run $run -UserPrincipalName $upn -SkuNames $skuNames -Seen $seen
+            $queue.Add([string]$upn)
         }
     }
 
     end {
-        $null = Write-AirlockLog -Run $run
+        try {
+            foreach ($upn in $queue) {
+                Invoke-AirlockOffboarding -Run $run -UserPrincipalName $upn -SkuNames $skuNames -Seen $seen
+            }
+        }
+        finally {
+            $null = Write-AirlockLog -Run $run
+        }
     }
 }

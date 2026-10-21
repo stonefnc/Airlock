@@ -652,6 +652,43 @@ Describe 'Remove-AirlockUser' {
             $recipient.Detail | Should -Match ([regex]::Escape($script:ManagerUpn))
         }
 
+        It 'writes the log with the finished users even when the run ends with an unexpected error' {
+            Add-TypicalLeaver
+            $dir = Join-Path -Path $TestDrive -ChildPath 'crash-logs'
+            Set-AirlockTestConnection -LogDirectory $dir
+            Mock -ModuleName Airlock Test-AirlockUserPrincipalName -MockWith {
+                if ($Value -like 'boom@*') { throw 'unexpected terminating error' }
+                $true
+            }
+
+            { Remove-AirlockUser -UserPrincipalName $script:AdaUpn, 'boom@contoso.example' } | Should -Throw '*unexpected terminating error*'
+
+            $files = @(Get-ChildItem -LiteralPath $dir -Filter '*.csv')
+            $files.Count | Should -Be 1
+            $rows = @(Import-Csv -LiteralPath $files[0].FullName)
+            @($rows | Where-Object { $_.Target -eq 'ada.example@contoso.example' -and $_.Action -eq 'BlockSignIn' -and $_.Status -eq 'Applied' }).Count | Should -Be 1
+        }
+
+        It 'writes one log file, not one per pipeline item' {
+            Add-TypicalLeaver
+            Add-FakeUser -Upn 'sam.sample@contoso.example' -Id 'u-sam'
+            $dir = Join-Path -Path $TestDrive -ChildPath 'pipeline-logs'
+            Set-AirlockTestConnection -LogDirectory $dir
+
+            $null = @('ada.example@contoso.example', 'sam.sample@contoso.example') | Remove-AirlockUser
+
+            @(Get-ChildItem -LiteralPath $dir -Filter '*.csv').Count | Should -Be 1
+        }
+
+        It 'writes no log when the command is refused before the run starts' {
+            $dir = Join-Path -Path $TestDrive -ChildPath 'refused-logs'
+            Set-AirlockTestConnection -Command 'New-AirlockUser' -LogDirectory $dir
+
+            { Remove-AirlockUser -UserPrincipalName $script:AdaUpn } | Should -Throw '*-Command Remove-AirlockUser*'
+
+            Test-Path -LiteralPath $dir | Should -BeFalse
+        }
+
         It 'writes the log for a WhatIf run and records the plan as WhatIf' {
             Add-TypicalLeaver
 
