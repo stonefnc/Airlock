@@ -61,6 +61,18 @@ function global:Get-MgUserDefaultDrive {
     [CmdletBinding()]
     param($UserId)
 }
+function global:Revoke-MgUserSignInSession {
+    [CmdletBinding()]
+    param($UserId)
+}
+function global:Get-MgUserMemberOfAsGroup {
+    [CmdletBinding()]
+    param($UserId, $Property, [switch]$All)
+}
+function global:Remove-MgGroupMemberByRef {
+    [CmdletBinding()]
+    param($GroupId, $DirectoryObjectId)
+}
 
 function global:Import-AirlockForTest {
     $manifest = Join-Path -Path $PSScriptRoot -ChildPath '..' -AdditionalChildPath 'src', 'Airlock.psd1'
@@ -101,6 +113,9 @@ function global:Remove-AirlockTestStubs {
         'Get-MgSubscribedSku'
         'Set-MgUserLicense'
         'Get-MgUserDefaultDrive'
+        'Revoke-MgUserSignInSession'
+        'Get-MgUserMemberOfAsGroup'
+        'Remove-MgGroupMemberByRef'
         'Import-AirlockForTest'
         'Set-AirlockTestConnection'
         'Remove-AirlockTestStubs'

@@ -11,7 +11,7 @@ This README is the spec. Anything not yet built is marked **planned**.
 | Project scaffold and module loader | built |
 | `Connect-Airlock` | built, tests written, not yet run (see Testing) |
 | `New-AirlockUser` | built, tests written, not yet run (see Testing) |
-| `Remove-AirlockUser` | planned |
+| `Remove-AirlockUser` | built, tests written, not yet run (see Testing) |
 | Change log (CSV) | planned |
 | Pester test suite (all Graph calls mocked) | planned |
 | `docs/permissions.md` | planned |
@@ -121,19 +121,42 @@ Each user produces one result object:
 | `Error` | The first failure, if any |
 | `Actions` | The change log entries for this user, in order (see Change log) |
 
-### Remove-AirlockUser (planned)
+### Remove-AirlockUser
 
-For the named user it:
+Offboards one or more users. Run `Connect-Airlock -Command Remove-AirlockUser` first. The parameter accepts several names and pipeline input, so `Import-Csv ./leavers.csv | Remove-AirlockUser -WhatIf` works for any CSV with a `UserPrincipalName` column. For each user it:
 
-1. Blocks sign-in.
-2. Revokes active sessions and refresh tokens.
-3. Removes assigned licenses.
-4. Removes the user from groups that allow direct membership changes. Dynamic groups are skipped and logged.
-5. Records the user's manager in the change log as the recipient of the OneDrive content.
+1. Records the user's manager in the change log as the recipient of the OneDrive content.
+2. Blocks sign-in.
+3. Revokes active sessions and refresh tokens.
+4. Removes directly assigned licenses.
+5. Removes the user from groups.
 
-The OneDrive handover itself (granting the manager access) is planned for a later release. For now the manager is recorded so the step can be completed from the ticket.
+The account is not deleted. The OneDrive handover itself (granting the manager access) is planned for a later release. For now the manager is recorded in the log and on the result as `OneDriveRecipient` so the step can be completed from the ticket. If the user has no manager the log says so.
 
-The account is not deleted.
+The command is idempotent. A user who is already offboarded is reported as `AlreadyOffboarded` and nothing is changed. Each step checks the current state first. Revoking sessions cannot be checked, so it runs only when something else is still to be done for the user. That means a run that stopped part way is finished by running it again.
+
+A failed step is recorded and the remaining steps still run, because a half offboarded account is worse than a report with one failure. The user is then reported as `Failed`. If the user cannot be found, or the lookups fail, nothing is changed.
+
+Some things cannot be removed through Graph and are skipped with the reason in the log:
+
+* Groups with dynamic membership, because their members are set by rule.
+* Groups synced from an on-premises directory, which must be changed there.
+* Mail-enabled distribution lists, which are managed in Exchange.
+* A license that comes from a group. It is removed when the group membership is removed. If a license is assigned both directly and through a group, only the direct assignment is removed.
+
+Directory roles, group ownership and administrative unit membership are not changed. Blocking sign-in already stops the account from using them, but check them as part of your offboarding checklist. Removing them is planned.
+
+With `-WhatIf` nothing is changed. The lookups still run, so the preview reflects the real state of the tenant. Without `-WhatIf` the command does not prompt by default. Use `-WhatIf` first, or add `-Confirm` to be asked before each step.
+
+Each user produces one result object:
+
+| Property | Meaning |
+| --- | --- |
+| `UserPrincipalName` | As supplied |
+| `Outcome` | `Offboarded`, `AlreadyOffboarded`, `WhatIf` or `Failed` |
+| `OneDriveRecipient` | The manager who receives the OneDrive content, or empty |
+| `Error` | The first failure, if any |
+| `Actions` | The change log entries for this user, in order (see Change log) |
 
 ## Role map
 

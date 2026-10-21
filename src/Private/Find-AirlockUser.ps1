@@ -13,7 +13,7 @@ function Find-AirlockUser {
     )
 
     $escaped = $UserPrincipalName.Replace("'", "''")
-    $found = @(Get-MgUser -Filter "userPrincipalName eq '$escaped'" -Property 'id,userPrincipalName,assignedLicenses,usageLocation' -ErrorAction Stop)
+    $found = @(Get-MgUser -Filter "userPrincipalName eq '$escaped'" -Property 'id,userPrincipalName,accountEnabled,assignedLicenses,licenseAssignmentStates,usageLocation' -ErrorAction Stop)
     if ($found.Count -eq 0) {
         return $null
     }

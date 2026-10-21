@@ -67,7 +67,6 @@ function Invoke-AirlockOnboarding {
         [hashtable]$Seen
     )
 
-    $upnPattern = '^[A-Za-z0-9._%+!#^~''-]+@[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)+$'
     $graphRoot = 'https://graph.microsoft.com/v1.0'
 
     $upn = [string]$Spec.UserPrincipalName
@@ -96,7 +95,7 @@ function Invoke-AirlockOnboarding {
     if ([string]::IsNullOrWhiteSpace($upn)) {
         $problem = 'UserPrincipalName is missing.'
     }
-    elseif ($upn -notmatch $upnPattern) {
+    elseif (-not (Test-AirlockUserPrincipalName -Value $upn)) {
         $problem = "UserPrincipalName '$upn' is not a valid user principal name."
     }
     elseif ([string]::IsNullOrWhiteSpace($Spec.DisplayName)) {
@@ -108,7 +107,7 @@ function Invoke-AirlockOnboarding {
     elseif (-not $RoleMap.Roles.ContainsKey([string]$Spec.Role)) {
         $problem = "Role '$($Spec.Role)' is not defined in the roles file."
     }
-    elseif ($Spec.Manager -and $Spec.Manager -notmatch $upnPattern) {
+    elseif ($Spec.Manager -and -not (Test-AirlockUserPrincipalName -Value $Spec.Manager)) {
         $problem = "Manager '$($Spec.Manager)' is not a valid user principal name."
     }
     elseif ($Seen.ContainsKey($upn)) {
