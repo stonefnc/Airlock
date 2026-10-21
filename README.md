@@ -23,15 +23,16 @@ The onboarding and offboarding MVP is written. It has not yet been run against a
 | Directory role removal at offboarding (optional) | built, tests written, not yet run, the Graph calls are unconfirmed (see Testing) |
 | Group ownership transfer or removal at offboarding (optional) | built, tests written, not yet run, one Graph call is documented as unsupported for apps (see `docs/permissions.md`) |
 | Removal of Privileged Identity Management eligible roles, and of application or service principal ownership | planned |
-| Intune compliance report | planned (later release) |
-| Stale device report | planned (later release) |
+| Intune compliance report (`Get-AirlockComplianceReport`, read only) | built, tests written, not yet run, the Graph call is unconfirmed (see Testing) |
+| Stale device report (`Get-AirlockStaleDevice`, read only) | built, tests written, not yet run, the Graph call is unconfirmed (see Testing) |
+| License usage report (`Get-AirlockLicenseUsage`, read only) | built, tests written, not yet run, the Graph call is unconfirmed (see Testing) |
 
 ## Quick start
 
 1. Install PowerShell 7.2 or later, the Graph SDK (version 2) and Pester:
 
    ```powershell
-   Install-Module Microsoft.Graph.Authentication, Microsoft.Graph.Users, Microsoft.Graph.Users.Actions, Microsoft.Graph.Groups, Microsoft.Graph.Identity.DirectoryManagement, Microsoft.Graph.Identity.Governance, Microsoft.Graph.Files -MinimumVersion 2.0.0 -Scope CurrentUser
+   Install-Module Microsoft.Graph.Authentication, Microsoft.Graph.Users, Microsoft.Graph.Users.Actions, Microsoft.Graph.Groups, Microsoft.Graph.Identity.DirectoryManagement, Microsoft.Graph.Identity.Governance, Microsoft.Graph.DeviceManagement, Microsoft.Graph.Files -MinimumVersion 2.0.0 -Scope CurrentUser
    Install-Module Pester -MinimumVersion 5.3 -Scope CurrentUser
    ```
 
@@ -62,7 +63,7 @@ $results | Select-Object UserPrincipalName, Outcome, OneDrive, LogPath
 ## Requirements
 
 * PowerShell 7.2 or later
-* Microsoft Graph PowerShell SDK **2.0.0 or later** (`Microsoft.Graph.Authentication`, `Microsoft.Graph.Users`, `Microsoft.Graph.Groups`, `Microsoft.Graph.Identity.DirectoryManagement`, `Microsoft.Graph.Identity.Governance` for the directory role commands, `Microsoft.Graph.Users.Actions`, `Microsoft.Graph.Files`). Version 2 is the floor because the code uses `Connect-MgGraph -NoWelcome` and the version 2 command names. No particular 2.x release has been tested yet, so once you have validated one in your test tenant, pin that exact version. Command names can change between SDK releases, see `docs/permissions.md`.
+* Microsoft Graph PowerShell SDK **2.0.0 or later** (`Microsoft.Graph.Authentication`, `Microsoft.Graph.Users`, `Microsoft.Graph.Groups`, `Microsoft.Graph.Identity.DirectoryManagement`, `Microsoft.Graph.Identity.Governance` for the directory role commands, `Microsoft.Graph.DeviceManagement` for the Intune reports, `Microsoft.Graph.Users.Actions`, `Microsoft.Graph.Files`). Version 2 is the floor because the code uses `Connect-MgGraph -NoWelcome` and the version 2 command names. No particular 2.x release has been tested yet, so once you have validated one in your test tenant, pin that exact version. Command names can change between SDK releases, see `docs/permissions.md`.
 * Pester 5.3 or later for running the tests
 * A Microsoft 365 test tenant and an app registration (see Setup)
 
