@@ -4,7 +4,11 @@ Airlock is a PowerShell 7 module that automates user onboarding and offboarding 
 
 This README is the spec. Anything not yet built is marked **planned**.
 
+**Preview before you change anything.** Every command that changes a tenant accepts `-WhatIf`. Run it with `-WhatIf` first, read the plan and the change log it writes, and only then run it for real.
+
 ## Status
+
+The onboarding and offboarding MVP is written. It has not yet been run against a tenant, and the Pester suite has been written but not yet executed. See Testing for exactly what has and has not been checked.
 
 | Area | Status |
 | --- | --- |
@@ -12,11 +16,46 @@ This README is the spec. Anything not yet built is marked **planned**.
 | `Connect-Airlock` | built, tests written, not yet run (see Testing) |
 | `New-AirlockUser` | built, tests written, not yet run (see Testing) |
 | `Remove-AirlockUser` | built, tests written, not yet run (see Testing) |
-| Change log (CSV) | planned |
-| Pester test suite (all Graph calls mocked) | planned |
-| `docs/permissions.md` | planned |
+| Change log (CSV) | built, tests written, not yet run (see Testing) |
+| Pester test suite (all Graph calls mocked) | written, not yet run |
+| `docs/permissions.md` | built, with a list of items to verify in a test tenant |
+| OneDrive handover to the manager | planned |
+| Removal of directory roles and group ownership at offboarding | planned |
 | Intune compliance report | planned (later release) |
 | Stale device report | planned (later release) |
+
+## Quick start
+
+1. Install PowerShell 7.2 or later, the Graph SDK (version 2) and Pester:
+
+   ```powershell
+   Install-Module Microsoft.Graph.Authentication, Microsoft.Graph.Users, Microsoft.Graph.Users.Actions, Microsoft.Graph.Groups, Microsoft.Graph.Identity.DirectoryManagement, Microsoft.Graph.Files -Scope CurrentUser
+   Install-Module Pester -MinimumVersion 5.3 -Scope CurrentUser
+   ```
+
+2. Run the tests. They need no tenant:
+
+   ```powershell
+   Invoke-Pester ./tests
+   ```
+
+3. Set up a test tenant app registration, `.env` and `config/roles.json` as described in Setup. Copy `config/users.example.csv` to `config/users.csv` and edit it. Real role maps and user lists are git-ignored.
+4. Connect, then preview an onboarding with `-WhatIf` and open the change log it names:
+
+   ```powershell
+   Import-Module ./src/Airlock.psd1
+   Connect-Airlock -Command New-AirlockUser
+   New-AirlockUser -CsvPath ./config/users.csv -WhatIf
+   ```
+
+5. If the plan is what you expect, run the same command without `-WhatIf`.
+
+New users are created with a random temporary password. It is returned on the result and nowhere else, so capture the result:
+
+```powershell
+$results = New-AirlockUser -CsvPath ./config/users.csv
+$results | Select-Object UserPrincipalName, Outcome, OneDrive, LogPath
+```
 
 ## Requirements
 
@@ -178,11 +217,9 @@ Each user produces one result object:
 
 `config/users.example.csv` shows the format. Required columns are `UserPrincipalName`, `DisplayName`, and `Role`. Optional columns are `GivenName`, `Surname`, `Manager`, `Department`, and `JobTitle`.
 
-## Change log (planned)
+## Change log
 
-Status: the entries described here are already recorded in memory and returned on each result as `Actions`. Writing them to the CSV file below is planned.
-
-Every run will write one CSV file to `./logs` (or `AIRLOCK_LOG_DIR`) named `airlock-<command>-<yyyyMMdd-HHmmss>.csv`. One row is written per action. Columns:
+Every run writes one CSV file to `./logs` (or `AIRLOCK_LOG_DIR`, created if it does not exist) named `airlock-<command>-<yyyyMMdd-HHmmss>-<runid8>.csv`, for example `airlock-new-airlockuser-20261020-143000-5b0e1f6a.csv`. The time is UTC and the last part is the first eight characters of the run id, so two runs in the same second never overwrite each other. The path is on every result as `LogPath`, and the same entries are on each result as `Actions`. One row is written per action. Columns:
 
 | Column | Meaning |
 | --- | --- |
@@ -194,7 +231,9 @@ Every run will write one CSV file to `./logs` (or `AIRLOCK_LOG_DIR`) named `airl
 | Status | `Applied`, `Skipped`, `WhatIf`, `Failed`, or `Info` (a check that changes nothing, such as the OneDrive check) |
 | Detail | Group name, license SKU, error text, or manager, depending on the action |
 
-A `-WhatIf` run writes the same file with every change recorded as `WhatIf`, so the plan can be reviewed or attached to an approval ticket before the real run. The `logs` directory is git-ignored.
+A `-WhatIf` run writes the same file with every change recorded as `WhatIf`, so the plan can be reviewed or attached to an approval ticket before the real run. Previews are logged because a preview is the log you most want to attach.
+
+The log never contains the temporary password or any secret. Values that begin with `=`, `+`, `-` or `@` are written with a leading apostrophe so that a spreadsheet does not read them as a formula. If the log file cannot be written, for example because the folder is read only, a warning is shown and the results of the run are still returned. The `logs` directory is git-ignored.
 
 ## Testing
 
@@ -203,7 +242,31 @@ Install-Module Pester -MinimumVersion 5.3 -Scope CurrentUser
 Invoke-Pester ./tests
 ```
 
-The tests mock every Graph call and do not need a tenant, a network connection, or the Graph SDK to be signed in. They cover `-WhatIf` making no changes, idempotency, a missing role, and bad CSV rows.
+The tests mock every Graph call and do not need a tenant, a network connection, or the Graph SDK installed. The Graph commands are replaced by stand-in functions in `tests/TestHelpers.ps1`, and a small in-memory tenant stands behind the mocks so that running a command twice can be checked. They cover:
+
+* `-WhatIf` making no changes, for one user, a CSV, an existing user and offboarding.
+* Idempotency, by running each command twice against the state the first run left behind.
+* A missing role, and bad CSV rows of every kind: bad or missing user principal name, missing display name, undefined role, invalid manager, duplicates, and a file with a missing column.
+* Failure handling, including one failed step not stopping the others.
+* The change log: file name, columns, `-WhatIf` runs, formula protection, an unwritable folder, and that the temporary password never reaches the file.
+
+### What has and has not been checked
+
+The Pester suite was written on a machine that has only Windows PowerShell 5.1 and Pester 3.4, so it has **not been run**. What was checked there:
+
+* Every script in the repository parses without error.
+* The module functions were run under Windows PowerShell 5.1 against stand-in Graph functions, and the same scenarios as the tests behaved as described in this README.
+
+That is evidence the logic is right. It is not a passing Pester run. The first run of `Invoke-Pester` on PowerShell 7 with Pester 5.3 may well turn up small problems in the test files, such as mock scoping. The module itself has also never been run against a real tenant. `docs/permissions.md` lists what the mocks cannot confirm and what to verify in a test tenant first.
+
+## Known limitations
+
+* Offboarding does not remove directory roles, group ownership or administrative unit membership. Check these as part of your offboarding checklist.
+* The OneDrive content is not handed over. The manager is recorded as the recipient so it can be done from the ticket.
+* Onboarding checks existing group membership by reading each group's members. For a very large group this is slow when the user already exists.
+* Groups that can be assigned to Entra roles, dynamic groups, groups synced from on-premises, and mail-enabled distribution lists cannot be changed through these calls. They are skipped or recorded as failed, with the reason in the log.
+* A user principal name containing a character outside letters, digits and `. _ % + ! # ^ ~ ' -` is rejected.
+* The Graph PowerShell SDK command and parameter names are not confirmed against a live tenant yet.
 
 ## Layout
 
@@ -214,8 +277,9 @@ src/
   Public/            exported commands
   Private/           internal helpers
 config/              example role map and example CSV
-tests/               Pester tests
-docs/                permissions and notes
+tests/               Pester tests and the Graph stand-ins they use
+docs/                permissions.md
+logs/                change logs written at run time (git-ignored)
 ```
 
 ## Data and safety
