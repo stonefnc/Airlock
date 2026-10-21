@@ -4,7 +4,8 @@ function Get-AirlockRequiredPermission {
         Returns the Microsoft Graph application permissions each Airlock command needs.
     .DESCRIPTION
         This table is the source for the connection check in Connect-Airlock and for
-        docs/permissions.md. Keep the two in step.
+        docs/permissions.md. Keep the two in step. Permissions that a command can do
+        without are listed by Get-AirlockOptionalPermission instead.
     #>
     [CmdletBinding()]
     [OutputType([string[]])]
@@ -20,7 +21,6 @@ function Get-AirlockRequiredPermission {
             'GroupMember.ReadWrite.All'
             'LicenseAssignment.Read.All'
             'LicenseAssignment.ReadWrite.All'
-            'Files.Read.All'
         )
         'Remove-AirlockUser' = @(
             'User.ReadWrite.All'
@@ -39,4 +39,39 @@ function Get-AirlockRequiredPermission {
     }
 
     @($result | Sort-Object -Unique)
+}
+
+function Get-AirlockOptionalPermission {
+    <#
+    .SYNOPSIS
+        Returns the permissions a command can do without, and what is lost without them.
+    .DESCRIPTION
+        A missing optional permission never stops Connect-Airlock. It produces one
+        warning, and the command skips the feature that needs it.
+        Files.Read.All is optional because Microsoft documents the OneDrive lookup as
+        not supported for application permissions, so a tenant must still be able to
+        onboard users without it.
+    #>
+    [CmdletBinding()]
+    [OutputType([pscustomobject[]])]
+    param(
+        [Parameter(Mandatory)]
+        [string[]]$Command
+    )
+
+    $table = @{
+        'New-AirlockUser'    = @(
+            [pscustomobject]@{ Permission = 'Files.Read.All'; WithoutIt = 'New-AirlockUser skips the OneDrive check and reports it as NotChecked' }
+        )
+        'Remove-AirlockUser' = @()
+    }
+
+    $result = foreach ($name in $Command) {
+        if (-not $table.ContainsKey($name)) {
+            throw "Unknown Airlock command '$name'."
+        }
+        $table[$name]
+    }
+
+    @($result | Sort-Object -Property Permission -Unique)
 }

@@ -64,7 +64,9 @@ function Invoke-AirlockOnboarding {
         [hashtable]$SkuTable,
 
         [Parameter(Mandatory)]
-        [hashtable]$Seen
+        [hashtable]$Seen,
+
+        [bool]$CheckOneDrive = $true
     )
 
     $graphRoot = 'https://graph.microsoft.com/v1.0'
@@ -300,7 +302,10 @@ function Invoke-AirlockOnboarding {
             }
         }
 
-        if ($userId) {
+        if (-not $CheckOneDrive) {
+            Add-AirlockLogEntry -Run $Run -Target $target -Action 'CheckOneDrive' -Status 'Info' -Detail 'NotChecked. Files.Read.All is not granted to the app, so the OneDrive check was skipped.'
+        }
+        elseif ($userId) {
             $drive = Get-AirlockOneDriveState -UserId $userId
             $result.OneDrive = $drive.State
             Add-AirlockLogEntry -Run $Run -Target $target -Action 'CheckOneDrive' -Status 'Info' -Detail "$($drive.State). $($drive.Detail)"

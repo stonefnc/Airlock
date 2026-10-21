@@ -1,18 +1,23 @@
-function Import-AirlockEnv {
+function Read-AirlockEnvFile {
     <#
     .SYNOPSIS
-        Loads AIRLOCK_* settings from a .env file into the process environment.
+        Reads AIRLOCK_* settings from a .env file and returns them as a hashtable.
     .DESCRIPTION
-        Variables that are already set to a non-empty value are never overwritten,
-        so real environment variables take precedence over the file. Lines that are
-        blank, comments, or not AIRLOCK_* names are ignored. Empty values are skipped.
+        Nothing is written to the process environment. The values, including the
+        client secret, stay in memory and are passed to Get-AirlockConfig, so they are
+        not inherited by child processes. Lines that are blank, comments, or not
+        AIRLOCK_* names are ignored. Empty values are skipped.
         With no -Path, ./.env and then the repository root .env are tried and a
-        missing file is not an error. An explicit -Path that does not exist is.
+        missing file gives an empty result. An explicit -Path that does not exist is
+        an error.
     #>
     [CmdletBinding()]
+    [OutputType([hashtable])]
     param(
         [string]$Path
     )
+
+    $values = @{}
 
     if ([string]::IsNullOrWhiteSpace($Path)) {
         $moduleRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
@@ -22,7 +27,7 @@ function Import-AirlockEnv {
         )
         $Path = $candidates | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } | Select-Object -First 1
         if (-not $Path) {
-            return
+            return $values
         }
     }
     elseif (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
@@ -58,8 +63,8 @@ function Import-AirlockEnv {
             continue
         }
 
-        if ([string]::IsNullOrEmpty([Environment]::GetEnvironmentVariable($name))) {
-            [Environment]::SetEnvironmentVariable($name, $value, 'Process')
-        }
+        $values[$name] = $value
     }
+
+    $values
 }

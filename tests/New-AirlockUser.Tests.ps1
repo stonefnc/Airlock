@@ -669,6 +669,39 @@ Describe 'New-AirlockUser' {
             ($result.Actions | Where-Object { $_.Action -eq 'CheckOneDrive' }).Status | Should -Be 'Info'
         }
 
+        It 'skips the check and reports NotChecked when Files.Read.All is not granted' {
+            Set-AirlockTestConnection -OptionalPermissionsMissing 'Files.Read.All'
+            $global:AirlockTestDrive = 'ready'
+
+            $result = New-AirlockUser -UserPrincipalName $script:AdaUpn -DisplayName 'Ada Example' -Role engineer -RolesPath $script:RolesFile
+
+            $result.Outcome | Should -Be 'Created'
+            $result.OneDrive | Should -Be 'NotChecked'
+            Should -Invoke -CommandName Get-MgUserDefaultDrive -ModuleName Airlock -Times 0 -Exactly
+            $entry = $result.Actions | Where-Object { $_.Action -eq 'CheckOneDrive' }
+            $entry.Status | Should -Be 'Info'
+            $entry.Detail | Should -Match 'Files.Read.All'
+        }
+
+        It 'does not let a missing Files.Read.All stop the rest of onboarding' {
+            Set-AirlockTestConnection -OptionalPermissionsMissing 'Files.Read.All'
+
+            $result = New-AirlockUser -UserPrincipalName $script:AdaUpn -DisplayName 'Ada Example' -Role engineer `
+                -Manager $script:ManagerUpn -RolesPath $script:RolesFile
+
+            $result.Outcome | Should -Be 'Created'
+            Should -Invoke -CommandName New-MgGroupMemberByRef -ModuleName Airlock -Times 3 -Exactly
+            Should -Invoke -CommandName Set-MgUserLicense -ModuleName Airlock -Times 1 -Exactly
+            Should -Invoke -CommandName Set-MgUserManagerByRef -ModuleName Airlock -Times 1 -Exactly
+        }
+
+        It 'still tries the check when Connect-Airlock could not read the permissions' {
+            Set-AirlockTestConnection
+            $global:AirlockTestDrive = 'ready'
+
+            (New-AirlockUser -UserPrincipalName $script:AdaUpn -DisplayName 'Ada Example' -Role engineer -RolesPath $script:RolesFile).OneDrive | Should -Be 'Ready'
+        }
+
         It 'reports Unknown and still succeeds when the check is not permitted' {
             $global:AirlockTestDrive = 'forbidden'
 

@@ -98,9 +98,14 @@ function New-AirlockUser {
     $skuTable = Get-AirlockSkuTable
     $seen = [hashtable]::new([System.StringComparer]::OrdinalIgnoreCase)
 
+    # The OneDrive check needs Files.Read.All. Skip it only when Connect-Airlock saw
+    # that the permission is not granted. If the permissions could not be read at all,
+    # try the check, because it is best effort and reports Unknown rather than failing.
+    $checkOneDrive = @($state.OptionalPermissionsMissing) -notcontains 'Files.Read.All'
+
     try {
         foreach ($spec in $specs) {
-            Invoke-AirlockOnboarding -Run $run -Spec $spec -RoleMap $roleMap -SkuTable $skuTable -Seen $seen
+            Invoke-AirlockOnboarding -Run $run -Spec $spec -RoleMap $roleMap -SkuTable $skuTable -Seen $seen -CheckOneDrive $checkOneDrive
         }
     }
     finally {

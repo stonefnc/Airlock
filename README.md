@@ -73,16 +73,16 @@ The tests need none of the Graph modules to be signed in. Every Graph call is mo
 3. Copy `.env.example` to `.env` and fill in the tenant ID, client ID, and either a certificate thumbprint or a client secret. `.env` is git-ignored.
 4. Copy `config/roles.example.json` to `config/roles.json` and edit it to match your groups and license SKUs.
 
-Alternatively, set the same names as environment variables. Environment variables take precedence over `.env`.
+Alternatively, set the same names as environment variables. Environment variables take precedence over `.env`. Values read from `.env`, including the client secret, are kept in memory only and are not copied into the process environment, so child processes do not inherit them. The thumbprint and the secret are trimmed, and spaces are removed from the thumbprint, so a value pasted from a certificate viewer works.
 
 ## A note on scopes
 
 With app-only authentication the Graph SDK does not request scopes at sign-in. The permissions are fixed on the app registration and arrive in the access token as application roles. Airlock handles this in two ways:
 
 * Each command declares the exact application permissions it needs.
-* `Connect-Airlock -Command <name>` reads the roles from the token and fails early with a clear message if one is missing, before any change is attempted.
+* `Connect-Airlock -Command <name>` reads the application roles from the `roles` claim of the access token and fails early with a clear message if one is missing, before any change is attempted. The Graph SDK does not hand over the token, so Airlock makes one small request and reads the token back from it. The scopes on the Graph context are not used first, because for an app-only session they are often empty. If the token cannot be read, the context scopes are used. If neither can be read, Airlock warns that the permissions were not checked and connects anyway, so a missing permission then shows up as an error on the first call that needs it. The token is never logged or stored.
 
-Least privilege is therefore enforced by what you grant to the app registration, and Airlock verifies it rather than assuming it.
+Least privilege is therefore enforced by what you grant to the app registration, and Airlock verifies it rather than assuming it. Reading the token this way has not yet been confirmed against a live tenant, see `docs/permissions.md`.
 
 ## Usage
 
@@ -125,7 +125,7 @@ All commands that change anything accept `-WhatIf` and `-Confirm`.
 
 ### Connect-Airlock
 
-Connects to Microsoft Graph with app-only authentication. Reads `AIRLOCK_TENANT_ID`, `AIRLOCK_CLIENT_ID`, and either `AIRLOCK_CERT_THUMBPRINT` or `AIRLOCK_CLIENT_SECRET`. If both a certificate and a secret are set, the certificate is used. Verifies the token carries the permissions required by each command named in `-Command`, and if any is missing it disconnects and fails before any change is attempted. Returns the connection details (tenant, client, auth method, permissions) and never the secret.
+Connects to Microsoft Graph with app-only authentication. Reads `AIRLOCK_TENANT_ID`, `AIRLOCK_CLIENT_ID`, and either `AIRLOCK_CERT_THUMBPRINT` or `AIRLOCK_CLIENT_SECRET`. If both a certificate and a secret are set, the certificate is used. Verifies the token carries the permissions required by each command named in `-Command`, and if any is missing it disconnects and fails before any change is attempted. Any earlier connection is cleared first, so a failed attempt never leaves a stale one behind. Returns the connection details (tenant, client, auth method, permissions, and whether and how they were checked) and never the secret or the token.
 
 ### New-AirlockUser
 

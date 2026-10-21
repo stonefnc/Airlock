@@ -17,6 +17,27 @@ function global:Get-MgContext {
     [CmdletBinding()]
     param()
 }
+function global:Invoke-MgGraphRequest {
+    [CmdletBinding()]
+    param($Method, $Uri, $OutputType)
+}
+
+# Builds an unsigned token whose payload carries the given application roles. It is
+# only ever read by the module's claim decoder, never sent anywhere.
+function global:New-AirlockTestJwt {
+    param([string[]]$Role = @(), [switch]$OmitRoles)
+
+    $encode = {
+        param($text)
+        [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($text)).TrimEnd('=').Replace('+', '-').Replace('/', '_')
+    }
+    $payload = @{ aud = 'https://graph.microsoft.com'; appid = '11111111-1111-1111-1111-111111111111' }
+    if (-not $OmitRoles) {
+        $payload['roles'] = @($Role)
+    }
+    '{0}.{1}.{2}' -f (& $encode '{"alg":"RS256","typ":"JWT"}'), (& $encode ($payload | ConvertTo-Json -Compress)), 'c2lnbmF0dXJl'
+}
+
 function global:Get-MgUser {
     [CmdletBinding()]
     param($UserId, $Filter, $Property, [switch]$All)
@@ -83,7 +104,8 @@ function global:Import-AirlockForTest {
 function global:Set-AirlockTestConnection {
     param(
         [string[]]$Command = @('New-AirlockUser', 'Remove-AirlockUser'),
-        [string]$LogDirectory
+        [string]$LogDirectory,
+        [string[]]$OptionalPermissionsMissing = @()
     )
 
     # Logs go to the Pester TestDrive unless a test names a folder, so a test run
@@ -96,14 +118,17 @@ function global:Set-AirlockTestConnection {
         $LogDirectory = Join-Path -Path $drive -ChildPath 'airlock-logs'
     }
 
-    InModuleScope Airlock -Parameters @{ Command = $Command; LogDirectory = $LogDirectory } -ScriptBlock {
-        param($Command, $LogDirectory)
+    InModuleScope Airlock -Parameters @{ Command = $Command; LogDirectory = $LogDirectory; OptionalMissing = $OptionalPermissionsMissing } -ScriptBlock {
+        param($Command, $LogDirectory, $OptionalMissing)
         $script:AirlockState = [pscustomobject]@{
             TenantId     = '22222222-2222-2222-2222-222222222222'
             ClientId     = '11111111-1111-1111-1111-111111111111'
             AuthMethod   = 'Certificate'
             Commands     = @($Command)
             Permissions  = @()
+            PermissionsChecked         = $true
+            PermissionSource           = 'Token'
+            OptionalPermissionsMissing = @($OptionalMissing)
             LogDirectory = $LogDirectory
             ConnectedAt  = [datetime]::UtcNow
         }
@@ -115,6 +140,8 @@ function global:Remove-AirlockTestStubs {
         'Connect-MgGraph'
         'Disconnect-MgGraph'
         'Get-MgContext'
+        'Invoke-MgGraphRequest'
+        'New-AirlockTestJwt'
         'Get-MgUser'
         'New-MgUser'
         'Update-MgUser'
