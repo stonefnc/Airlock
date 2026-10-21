@@ -12,6 +12,11 @@ BeforeAll {
     "dyn":        { "groups": ["Dynamic Team"], "licenseSku": "ENTERPRISEPACK" },
     "ghostgroup": { "groups": ["No Such Group"], "licenseSku": "ENTERPRISEPACK" },
     "twin":       { "groups": ["Twin"] },
+    "maildl":     { "groups": ["Staff List"] },
+    "mailsec":    { "groups": ["Mail Security"] },
+    "synced":     { "groups": ["Synced Group"] },
+    "m365":       { "groups": ["Team Site"] },
+    "mixed":      { "groups": ["Engineering", "Staff List", "Mail Security", "Synced Group", "Dynamic Team", "Team Site", "VPN Users"], "licenseSku": "ENTERPRISEPACK" },
     "nosku":      { "groups": [], "licenseSku": "NOT_A_SKU" },
     "exhausted":  { "groups": [], "licenseSku": "O365_BUSINESS_ESSENTIALS" }
   }
@@ -29,6 +34,11 @@ BeforeAll {
         $global:AirlockTestManagers = @{}
         $global:AirlockTestDrive = 'missing'
         $global:AirlockTestFailVpn = $false
+        # How many times each call fails with a "does not exist" error before it works,
+        # which is how Entra replication lag looks to the caller.
+        $global:AirlockTestReplication = @{ Group = 0; License = 0; Manager = 0 }
+
+        Mock -ModuleName Airlock Start-Sleep -MockWith { }
 
         $global:AirlockTestUsers['grace.manager@contoso.example'] = [pscustomobject]@{
             Id                = 'mgr-id'
@@ -81,6 +91,10 @@ BeforeAll {
         }
 
         Mock -ModuleName Airlock Set-MgUserManagerByRef -MockWith {
+            if ($global:AirlockTestReplication.Manager -gt 0) {
+                $global:AirlockTestReplication.Manager--
+                throw 'Request_ResourceNotFound: Resource does not exist or one of its queried reference-property objects are not present.'
+            }
             $global:AirlockTestManagers[$UserId] = ($BodyParameter['@odata.id'] -split '/')[-1]
         }
 
@@ -89,14 +103,19 @@ BeforeAll {
             if ($Filter -match "^displayName eq '(.*)'$") {
                 $name = $Matches[1].Replace("''", "'")
             }
+            # Every group carries the properties the module asks Graph for.
             switch ($name) {
-                'Engineering' { [pscustomobject]@{ Id = 'g-eng'; DisplayName = $name; GroupTypes = @() } }
-                'VPN Users' { [pscustomobject]@{ Id = 'g-vpn'; DisplayName = $name; GroupTypes = @() } }
-                'Source Access' { [pscustomobject]@{ Id = 'g-src'; DisplayName = $name; GroupTypes = @() } }
-                'Dynamic Team' { [pscustomobject]@{ Id = 'g-dyn'; DisplayName = $name; GroupTypes = @('DynamicMembership', 'Unified') } }
+                'Engineering' { [pscustomobject]@{ Id = 'g-eng'; DisplayName = $name; GroupTypes = @(); MailEnabled = $false; SecurityEnabled = $true; OnPremisesSyncEnabled = $null } }
+                'VPN Users' { [pscustomobject]@{ Id = 'g-vpn'; DisplayName = $name; GroupTypes = @(); MailEnabled = $false; SecurityEnabled = $true; OnPremisesSyncEnabled = $null } }
+                'Source Access' { [pscustomobject]@{ Id = 'g-src'; DisplayName = $name; GroupTypes = @(); MailEnabled = $false; SecurityEnabled = $true; OnPremisesSyncEnabled = $null } }
+                'Dynamic Team' { [pscustomobject]@{ Id = 'g-dyn'; DisplayName = $name; GroupTypes = @('DynamicMembership', 'Unified'); MailEnabled = $true; SecurityEnabled = $false; OnPremisesSyncEnabled = $null } }
+                'Staff List' { [pscustomobject]@{ Id = 'g-dl'; DisplayName = $name; GroupTypes = @(); MailEnabled = $true; SecurityEnabled = $false; OnPremisesSyncEnabled = $null } }
+                'Mail Security' { [pscustomobject]@{ Id = 'g-mailsec'; DisplayName = $name; GroupTypes = @(); MailEnabled = $true; SecurityEnabled = $true; OnPremisesSyncEnabled = $null } }
+                'Synced Group' { [pscustomobject]@{ Id = 'g-sync'; DisplayName = $name; GroupTypes = @(); MailEnabled = $false; SecurityEnabled = $true; OnPremisesSyncEnabled = $true } }
+                'Team Site' { [pscustomobject]@{ Id = 'g-m365'; DisplayName = $name; GroupTypes = @('Unified'); MailEnabled = $true; SecurityEnabled = $false; OnPremisesSyncEnabled = $null } }
                 'Twin' {
-                    [pscustomobject]@{ Id = 'g-twin-1'; DisplayName = $name; GroupTypes = @() }
-                    [pscustomobject]@{ Id = 'g-twin-2'; DisplayName = $name; GroupTypes = @() }
+                    [pscustomobject]@{ Id = 'g-twin-1'; DisplayName = $name; GroupTypes = @(); MailEnabled = $false; SecurityEnabled = $true; OnPremisesSyncEnabled = $null }
+                    [pscustomobject]@{ Id = 'g-twin-2'; DisplayName = $name; GroupTypes = @(); MailEnabled = $false; SecurityEnabled = $true; OnPremisesSyncEnabled = $null }
                 }
             }
         }
@@ -110,6 +129,10 @@ BeforeAll {
         }
 
         Mock -ModuleName Airlock New-MgGroupMemberByRef -MockWith {
+            if ($global:AirlockTestReplication.Group -gt 0) {
+                $global:AirlockTestReplication.Group--
+                throw 'Request_BadRequest: The source resource object or one of the objects being referenced don''t exist.'
+            }
             if ($GroupId -eq 'g-vpn' -and $global:AirlockTestFailVpn) {
                 throw 'Request_BadRequest: simulated group failure'
             }
@@ -121,6 +144,10 @@ BeforeAll {
         }
 
         Mock -ModuleName Airlock Set-MgUserLicense -MockWith {
+            if ($global:AirlockTestReplication.License -gt 0) {
+                $global:AirlockTestReplication.License--
+                throw 'Request_ResourceNotFound: Resource does not exist or one of its queried reference-property objects are not present.'
+            }
             $user = $global:AirlockTestUsers.Values | Where-Object { $_.Id -eq $UserId }
             $user.AssignedLicenses = @($user.AssignedLicenses) + [pscustomobject]@{ SkuId = $BodyParameter.addLicenses[0].skuId }
         }
@@ -161,7 +188,7 @@ BeforeAll {
 }
 
 AfterAll {
-    Remove-Variable -Name AirlockTestUsers, AirlockTestMembers, AirlockTestManagers, AirlockTestDrive, AirlockTestFailVpn -Scope Global -ErrorAction SilentlyContinue
+    Remove-Variable -Name AirlockTestUsers, AirlockTestMembers, AirlockTestManagers, AirlockTestDrive, AirlockTestFailVpn, AirlockTestReplication -Scope Global -ErrorAction SilentlyContinue
     Remove-AirlockTestStubs
 }
 
@@ -550,6 +577,60 @@ Describe 'New-AirlockUser' {
         }
     }
 
+    Context 'groups that Graph cannot change' {
+        It 'catches <Kind> in the plan: the user is created and the group is skipped, not failed' -ForEach @(
+            @{ Kind = 'a distribution list'; Role = 'maildl'; Group = 'Staff List'; Reason = 'Exchange' }
+            @{ Kind = 'a mail-enabled security group'; Role = 'mailsec'; Group = 'Mail Security'; Reason = 'Exchange' }
+            @{ Kind = 'an on-premises synced group'; Role = 'synced'; Group = 'Synced Group'; Reason = 'on-premises' }
+            @{ Kind = 'a dynamic group'; Role = 'dyn'; Group = 'Dynamic Team'; Reason = 'dynamic' }
+        ) {
+            $result = New-AirlockUser -UserPrincipalName $script:AdaUpn -DisplayName 'Ada Example' -Role $Role -RolesPath $script:RolesFile
+
+            $result.Outcome | Should -Be 'Created'
+            @($result.Actions | Where-Object { $_.Status -eq 'Failed' }).Count | Should -Be 0
+            $entry = $result.Actions | Where-Object { $_.Action -eq 'AddGroup' }
+            $entry.Status | Should -Be 'Skipped'
+            $entry.Detail | Should -Match ([regex]::Escape($Group))
+            $entry.Detail | Should -Match $Reason
+            Should -Invoke -CommandName New-MgGroupMemberByRef -ModuleName Airlock -Times 0 -Exactly
+        }
+
+        It 'still adds a Microsoft 365 group, which is mail-enabled but can be changed' {
+            $result = New-AirlockUser -UserPrincipalName $script:AdaUpn -DisplayName 'Ada Example' -Role m365 -RolesPath $script:RolesFile
+
+            $result.Outcome | Should -Be 'Created'
+            Should -Invoke -CommandName New-MgGroupMemberByRef -ModuleName Airlock -Times 1 -Exactly -ParameterFilter { $GroupId -eq 'g-m365' }
+        }
+
+        It 'adds the groups that can be changed and skips the rest in a mixed role, with no failures' {
+            $result = New-AirlockUser -UserPrincipalName $script:AdaUpn -DisplayName 'Ada Example' -Role mixed -RolesPath $script:RolesFile
+
+            $result.Outcome | Should -Be 'Created'
+            Should -Invoke -CommandName New-MgGroupMemberByRef -ModuleName Airlock -Times 3 -Exactly
+            Should -Invoke -CommandName New-MgGroupMemberByRef -ModuleName Airlock -Times 1 -Exactly -ParameterFilter { $GroupId -eq 'g-eng' }
+            Should -Invoke -CommandName New-MgGroupMemberByRef -ModuleName Airlock -Times 1 -Exactly -ParameterFilter { $GroupId -eq 'g-m365' }
+            Should -Invoke -CommandName New-MgGroupMemberByRef -ModuleName Airlock -Times 1 -Exactly -ParameterFilter { $GroupId -eq 'g-vpn' }
+            @($result.Actions | Where-Object { $_.Action -eq 'AddGroup' -and $_.Status -eq 'Skipped' }).Count | Should -Be 4
+            @($result.Actions | Where-Object { $_.Status -eq 'Failed' }).Count | Should -Be 0
+        }
+
+        It 'does not read the members of a group it will skip, for an existing user' {
+            Add-FullyProvisionedAda
+
+            New-AirlockUser -UserPrincipalName $script:AdaUpn -DisplayName 'Ada Example' -Role maildl -RolesPath $script:RolesFile | Out-Null
+
+            Should -Invoke -CommandName Get-MgGroupMember -ModuleName Airlock -Times 0 -Exactly
+        }
+
+        It 'asks Graph for the properties it needs to decide' {
+            New-AirlockUser -UserPrincipalName $script:AdaUpn -DisplayName 'Ada Example' -Role nolicense -RolesPath $script:RolesFile | Out-Null
+
+            Should -Invoke -CommandName Get-MgGroup -ModuleName Airlock -ParameterFilter {
+                $Property -match 'mailEnabled' -and $Property -match 'securityEnabled' -and $Property -match 'onPremisesSyncEnabled' -and $Property -match 'groupTypes'
+            }
+        }
+    }
+
     Context 'missing role and bad lookups' {
         It 'fails a user whose role is not in the roles file and changes nothing' {
             $result = New-AirlockUser -UserPrincipalName $script:AdaUpn -DisplayName 'Ada Example' -Role wizard -RolesPath $script:RolesFile
@@ -648,6 +729,86 @@ Describe 'New-AirlockUser' {
             $failed = @($result.Actions | Where-Object { $_.Status -eq 'Failed' })
             $failed.Count | Should -Be 1
             $failed[0].Action | Should -Be 'AddGroup'
+        }
+    }
+
+    Context 'replication delay after the user is created' {
+        It 'retries the group add, the license and the manager, and the user ends up complete' {
+            $global:AirlockTestReplication = @{ Group = 2; License = 1; Manager = 1 }
+
+            $result = New-AirlockUser -UserPrincipalName $script:AdaUpn -DisplayName 'Ada Example' -Role engineer `
+                -Manager $script:ManagerUpn -RolesPath $script:RolesFile
+
+            $result.Outcome | Should -Be 'Created'
+            @($result.Actions | Where-Object { $_.Status -eq 'Failed' }).Count | Should -Be 0
+            Should -Invoke -CommandName Start-Sleep -ModuleName Airlock -Times 4 -Exactly
+            @($global:AirlockTestMembers['g-eng']).Count | Should -Be 1
+            @($global:AirlockTestUsers[$script:AdaUpn].AssignedLicenses).Count | Should -Be 1
+            $global:AirlockTestManagers.Values | Should -Contain 'mgr-id'
+            ($result.Actions | Where-Object { $_.Action -eq 'AddGroup' -and $_.Detail -match 'Engineering' }).Detail | Should -Match 'succeeded after 2 retries'
+        }
+
+        It 'reports Failed with a run-it-again hint when the lag outlasts the retries, and the other steps still run' {
+            $global:AirlockTestReplication = @{ Group = 0; License = 99; Manager = 0 }
+
+            $result = New-AirlockUser -UserPrincipalName $script:AdaUpn -DisplayName 'Ada Example' -Role engineer `
+                -Manager $script:ManagerUpn -RolesPath $script:RolesFile
+
+            $result.Outcome | Should -Be 'Failed'
+            $result.Created | Should -BeTrue
+            $result.Error | Should -Match 'Run the command again'
+            Should -Invoke -CommandName New-MgGroupMemberByRef -ModuleName Airlock -Times 3 -Exactly
+            Should -Invoke -CommandName Set-MgUserManagerByRef -ModuleName Airlock -Times 1 -Exactly
+        }
+
+        It 'finishes the job when the command is run again' {
+            $global:AirlockTestReplication = @{ Group = 0; License = 99; Manager = 0 }
+            New-AirlockUser -UserPrincipalName $script:AdaUpn -DisplayName 'Ada Example' -Role engineer `
+                -Manager $script:ManagerUpn -RolesPath $script:RolesFile | Out-Null
+            $global:AirlockTestReplication = @{ Group = 0; License = 0; Manager = 0 }
+
+            $second = New-AirlockUser -UserPrincipalName $script:AdaUpn -DisplayName 'Ada Example' -Role engineer `
+                -Manager $script:ManagerUpn -RolesPath $script:RolesFile
+
+            $second.Outcome | Should -Be 'Existing'
+            @($global:AirlockTestUsers[$script:AdaUpn].AssignedLicenses).Count | Should -Be 1
+            Should -Invoke -CommandName New-MgUser -ModuleName Airlock -Times 1 -Exactly
+        }
+
+        It 'does not retry for a user that already existed' {
+            Add-FullyProvisionedAda
+            $global:AirlockTestMembers['g-vpn'] = @()
+            $global:AirlockTestReplication = @{ Group = 99; License = 0; Manager = 0 }
+
+            $result = New-AirlockUser -UserPrincipalName $script:AdaUpn -DisplayName 'Ada Example' -Role engineer `
+                -Manager $script:ManagerUpn -RolesPath $script:RolesFile
+
+            $result.Outcome | Should -Be 'Failed'
+            Should -Invoke -CommandName Start-Sleep -ModuleName Airlock -Times 0 -Exactly
+            $result.Error | Should -Not -Match 'replication'
+        }
+    }
+
+    Context 'declined confirmation' {
+        It 'reports Declined, creates nothing and does not call the user Existing' {
+            $result = InModuleScope Airlock -Parameters @{ Roles = $script:RolesFile } -ScriptBlock {
+                param($Roles)
+                $cmdlet = [pscustomobject]@{}
+                $cmdlet | Add-Member -MemberType ScriptMethod -Name ShouldProcess -Value { param($Target, $Action) $false }
+                $run = New-AirlockRun -Command 'New-AirlockUser' -Cmdlet $cmdlet -LogDirectory 'unused'
+                $spec = [pscustomobject]@{
+                    RowNumber = $null; UserPrincipalName = 'ada.example@contoso.example'; DisplayName = 'Ada Example'; Role = 'engineer'
+                    GivenName = ''; Surname = ''; Manager = ''; Department = ''; JobTitle = ''
+                }
+                Invoke-AirlockOnboarding -Run $run -Spec $spec -RoleMap (Import-AirlockRoleMap -Path $Roles) `
+                    -SkuTable (Get-AirlockSkuTable) -Seen ([hashtable]::new([System.StringComparer]::OrdinalIgnoreCase))
+            }
+
+            $result.Outcome | Should -Be 'Declined'
+            $result.Created | Should -BeFalse
+            Assert-NoGraphWrites
+            @($result.Actions | Where-Object { $_.Status -eq 'Declined' }).Count | Should -BeGreaterThan 0
+            @($result.Actions | Where-Object { $_.Status -eq 'Applied' }).Count | Should -Be 0
         }
     }
 

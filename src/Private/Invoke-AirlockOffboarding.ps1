@@ -18,6 +18,7 @@ function Complete-AirlockOffboarding {
     $entries = @($Run.Entries | Select-Object -Skip $StartIndex)
     $failed = @($entries | Where-Object { $_.Status -eq 'Failed' })
     $applied = @($entries | Where-Object { $_.Status -eq 'Applied' })
+    $declined = @($entries | Where-Object { $_.Status -eq 'Declined' })
 
     $Result.Actions = $entries
     if ($failed.Count -gt 0) {
@@ -26,6 +27,11 @@ function Complete-AirlockOffboarding {
     }
     elseif ($Run.IsWhatIf) {
         $Result.Outcome = 'WhatIf'
+    }
+    elseif ($declined.Count -gt 0) {
+        # Declined steps are not "already done". Without this, a user whose steps were
+        # all declined would be reported as AlreadyOffboarded.
+        $Result.Outcome = 'Declined'
     }
     elseif ($applied.Count -gt 0) {
         $Result.Outcome = 'Offboarded'
@@ -117,17 +123,7 @@ function Invoke-AirlockOffboarding {
 
         $groups = @(Get-MgUserMemberOfAsGroup -UserId $user.Id -All -Property 'id,displayName,groupTypes,mailEnabled,securityEnabled,onPremisesSyncEnabled' -ErrorAction Stop)
         foreach ($group in $groups) {
-            $types = @($group.GroupTypes)
-            $reason = $null
-            if ($types -contains 'DynamicMembership') {
-                $reason = 'dynamic membership, managed by rule'
-            }
-            elseif ($group.OnPremisesSyncEnabled -eq $true) {
-                $reason = 'synced from on-premises, remove the member there'
-            }
-            elseif ($group.MailEnabled -eq $true -and $group.SecurityEnabled -ne $true -and $types -notcontains 'Unified') {
-                $reason = 'mail-enabled distribution list, remove the member in Exchange'
-            }
+            $reason = Get-AirlockGroupSkipReason -Group $group
 
             $name = [string]$group.DisplayName
             if (-not $name) {

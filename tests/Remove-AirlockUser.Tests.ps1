@@ -191,6 +191,34 @@ Describe 'Test-AirlockUserPrincipalName' {
     }
 }
 
+Describe 'Get-AirlockGroupSkipReason' {
+    It 'says why <Case> cannot be changed' -ForEach @(
+        @{ Case = 'a dynamic group'; Types = @('DynamicMembership'); Mail = $false; Sync = $null; Reason = 'dynamic' }
+        @{ Case = 'a dynamic Microsoft 365 group'; Types = @('DynamicMembership', 'Unified'); Mail = $true; Sync = $null; Reason = 'dynamic' }
+        @{ Case = 'an on-premises synced group'; Types = @(); Mail = $false; Sync = $true; Reason = 'on-premises' }
+        @{ Case = 'a distribution list'; Types = @(); Mail = $true; Sync = $null; Reason = 'Exchange' }
+        @{ Case = 'a mail-enabled security group'; Types = @(); Mail = $true; Sync = $null; Reason = 'Exchange' }
+    ) {
+        $actual = InModuleScope Airlock -Parameters @{ Types = $Types; Mail = $Mail; Sync = $Sync } -ScriptBlock {
+            param($Types, $Mail, $Sync)
+            Get-AirlockGroupSkipReason -Group ([pscustomobject]@{ GroupTypes = $Types; MailEnabled = $Mail; SecurityEnabled = $true; OnPremisesSyncEnabled = $Sync })
+        }
+
+        $actual | Should -Match $Reason
+    }
+
+    It 'allows <Case>' -ForEach @(
+        @{ Case = 'a plain security group'; Types = @(); Mail = $false; Sync = $null }
+        @{ Case = 'a Microsoft 365 group, which is mail-enabled'; Types = @('Unified'); Mail = $true; Sync = $null }
+        @{ Case = 'a group whose sync flag is false'; Types = @(); Mail = $false; Sync = $false }
+    ) {
+        InModuleScope Airlock -Parameters @{ Types = $Types; Mail = $Mail; Sync = $Sync } -ScriptBlock {
+            param($Types, $Mail, $Sync)
+            Get-AirlockGroupSkipReason -Group ([pscustomobject]@{ GroupTypes = $Types; MailEnabled = $Mail; SecurityEnabled = $true; OnPremisesSyncEnabled = $Sync })
+        } | Should -BeNullOrEmpty
+    }
+}
+
 Describe 'Remove-AirlockUser' {
     BeforeEach {
         Initialize-FakeTenant
@@ -483,6 +511,7 @@ Describe 'Remove-AirlockUser' {
                 (New-FakeGroup -Id 'g-dyn' -Name 'Dynamic Team' -Types @('DynamicMembership'))
                 (New-FakeGroup -Id 'g-sync' -Name 'Synced Group' -OnPremisesSync $true)
                 (New-FakeGroup -Id 'g-dl' -Name 'Staff List' -MailEnabled $true -SecurityEnabled $false)
+                (New-FakeGroup -Id 'g-mailsec' -Name 'Mail Security' -MailEnabled $true -SecurityEnabled $true)
             )
 
             $result = Remove-AirlockUser -UserPrincipalName $script:AdaUpn
@@ -492,7 +521,8 @@ Describe 'Remove-AirlockUser' {
             Should -Invoke -CommandName Remove-MgGroupMemberByRef -ModuleName Airlock -Times 1 -Exactly -ParameterFilter { $GroupId -eq 'g-m365' }
 
             $skipped = @($result.Actions | Where-Object { $_.Action -eq 'RemoveGroup' -and $_.Status -eq 'Skipped' })
-            $skipped.Count | Should -Be 3
+            $skipped.Count | Should -Be 4
+            ($skipped | Where-Object { $_.Detail -match 'Mail Security' }).Detail | Should -Match 'Exchange'
             ($skipped | Where-Object { $_.Detail -match 'Dynamic Team' }).Detail | Should -Match 'dynamic'
             ($skipped | Where-Object { $_.Detail -match 'Synced Group' }).Detail | Should -Match 'on-premises'
             ($skipped | Where-Object { $_.Detail -match 'Staff List' }).Detail | Should -Match 'Exchange'
@@ -581,6 +611,29 @@ Describe 'Remove-AirlockUser' {
             $result.Outcome | Should -Be 'Failed'
             $result.Error | Should -Match 'simulated read failure'
             Assert-NoGraphWrites
+        }
+    }
+
+    Context 'declined confirmation' {
+        It 'reports Declined, not AlreadyOffboarded, and changes nothing' {
+            Add-TypicalLeaver
+
+            $result = InModuleScope Airlock -ScriptBlock {
+                $cmdlet = [pscustomobject]@{}
+                $cmdlet | Add-Member -MemberType ScriptMethod -Name ShouldProcess -Value { param($Target, $Action) $false }
+                $run = New-AirlockRun -Command 'Remove-AirlockUser' -Cmdlet $cmdlet -LogDirectory 'unused'
+                Invoke-AirlockOffboarding -Run $run -UserPrincipalName 'ada.example@contoso.example' `
+                    -SkuNames ([hashtable]::new([System.StringComparer]::OrdinalIgnoreCase)) `
+                    -Seen ([hashtable]::new([System.StringComparer]::OrdinalIgnoreCase))
+            }
+
+            $result.Outcome | Should -Be 'Declined'
+            Assert-NoGraphWrites
+            @($result.Actions | Where-Object { $_.Status -eq 'Applied' }).Count | Should -Be 0
+            ($result.Actions | Where-Object { $_.Action -eq 'BlockSignIn' }).Status | Should -Be 'Declined'
+            ($result.Actions | Where-Object { $_.Action -eq 'RemoveLicense' }).Status | Should -Be 'Declined'
+            @($result.Actions | Where-Object { $_.Action -eq 'RemoveGroup' -and $_.Status -eq 'Declined' }).Count | Should -Be 3
+            $global:OffUsers[$script:AdaUpn].AccountEnabled | Should -BeTrue
         }
     }
 

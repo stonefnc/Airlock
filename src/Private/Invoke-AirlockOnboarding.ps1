@@ -17,6 +17,7 @@ function Complete-AirlockOnboarding {
 
     $entries = @($Run.Entries | Select-Object -Skip $StartIndex)
     $failed = @($entries | Where-Object { $_.Status -eq 'Failed' })
+    $declined = @($entries | Where-Object { $_.Status -eq 'Declined' })
 
     $Result.Actions = $entries
     if ($failed.Count -gt 0) {
@@ -25,6 +26,11 @@ function Complete-AirlockOnboarding {
     }
     elseif ($Run.IsWhatIf) {
         $Result.Outcome = 'WhatIf'
+    }
+    elseif ($declined.Count -gt 0) {
+        # Declined steps are not "already done". Say so, so the user is not left
+        # believing a half finished onboarding is complete.
+        $Result.Outcome = 'Declined'
     }
     elseif ($Result.Created) {
         $Result.Outcome = 'Created'
@@ -154,7 +160,7 @@ function Invoke-AirlockOnboarding {
 
         foreach ($groupName in $roleDef.Groups) {
             $escaped = $groupName.Replace("'", "''")
-            $hits = @(Get-MgGroup -Filter "displayName eq '$escaped'" -Property 'id,displayName,groupTypes' -ErrorAction Stop)
+            $hits = @(Get-MgGroup -Filter "displayName eq '$escaped'" -Property 'id,displayName,groupTypes,mailEnabled,securityEnabled,onPremisesSyncEnabled' -ErrorAction Stop)
             if ($hits.Count -eq 0) {
                 throw "Group '$groupName' was not found."
             }
@@ -162,19 +168,21 @@ function Invoke-AirlockOnboarding {
                 throw "Group '$groupName' matches more than one group, so it was not used."
             }
 
+            # Groups Graph cannot change are found here, in the plan, so they never
+            # surface as a failure after the user has already been created.
             $group = $hits[0]
-            $isDynamic = @($group.GroupTypes) -contains 'DynamicMembership'
+            $skipReason = Get-AirlockGroupSkipReason -Group $group
             $isMember = $false
-            if ($existing -and -not $isDynamic) {
+            if ($existing -and -not $skipReason) {
                 $memberIds = @(Get-MgGroupMember -GroupId $group.Id -All -ErrorAction Stop | ForEach-Object { [string]$_.Id })
                 $isMember = $memberIds -contains [string]$existing.Id
             }
 
             $groupPlans += [pscustomobject]@{
-                Name      = $groupName
-                Id        = [string]$group.Id
-                IsDynamic = $isDynamic
-                IsMember  = $isMember
+                Name       = $groupName
+                Id         = [string]$group.Id
+                SkipReason = $skipReason
+                IsMember   = $isMember
             }
         }
 
@@ -264,22 +272,22 @@ function Invoke-AirlockOnboarding {
         }
         else {
             $managerRef = @{ '@odata.id' = "$graphRoot/users/$($manager.Id)" }
-            $null = Invoke-AirlockStep -Run $Run -Target $target -Action 'SetManager' -Detail $Spec.Manager -Do {
+            $null = Invoke-AirlockStep -Run $Run -Target $target -Action 'SetManager' -Detail $Spec.Manager -RetryOnReplication:$result.Created -Do {
                 Set-MgUserManagerByRef -UserId $userId -BodyParameter $managerRef -ErrorAction Stop
             }
         }
     }
 
     foreach ($plan in $groupPlans) {
-        if ($plan.IsDynamic) {
-            Add-AirlockLogEntry -Run $Run -Target $target -Action 'AddGroup' -Status 'Skipped' -Detail "$($plan.Name): dynamic membership, managed by rule"
+        if ($plan.SkipReason) {
+            Add-AirlockLogEntry -Run $Run -Target $target -Action 'AddGroup' -Status 'Skipped' -Detail "$($plan.Name): $($plan.SkipReason)"
         }
         elseif ($plan.IsMember) {
             Add-AirlockLogEntry -Run $Run -Target $target -Action 'AddGroup' -Status 'Skipped' -Detail "$($plan.Name): already a member"
         }
         else {
             $memberRef = @{ '@odata.id' = "$graphRoot/directoryObjects/$userId" }
-            $null = Invoke-AirlockStep -Run $Run -Target $target -Action 'AddGroup' -Detail $plan.Name -Do {
+            $null = Invoke-AirlockStep -Run $Run -Target $target -Action 'AddGroup' -Detail $plan.Name -RetryOnReplication:$result.Created -Do {
                 New-MgGroupMemberByRef -GroupId $plan.Id -BodyParameter $memberRef -ErrorAction Stop
             }
         }
@@ -294,7 +302,7 @@ function Invoke-AirlockOnboarding {
                 addLicenses    = @(@{ skuId = $sku.SkuId })
                 removeLicenses = @()
             }
-            $licensed = Invoke-AirlockStep -Run $Run -Target $target -Action 'AssignLicense' -Detail $sku.PartNumber -Do {
+            $licensed = Invoke-AirlockStep -Run $Run -Target $target -Action 'AssignLicense' -Detail $sku.PartNumber -RetryOnReplication:$result.Created -Do {
                 Set-MgUserLicense -UserId $userId -BodyParameter $licenseBody -ErrorAction Stop
             }
             if ($licensed.Status -eq 'Applied' -or $licensed.Status -eq 'WhatIf') {
@@ -311,7 +319,7 @@ function Invoke-AirlockOnboarding {
             Add-AirlockLogEntry -Run $Run -Target $target -Action 'CheckOneDrive' -Status 'Info' -Detail "$($drive.State). $($drive.Detail)"
         }
         else {
-            Add-AirlockLogEntry -Run $Run -Target $target -Action 'CheckOneDrive' -Status 'Info' -Detail 'NotChecked. The user does not exist yet because this is a preview.'
+            Add-AirlockLogEntry -Run $Run -Target $target -Action 'CheckOneDrive' -Status 'Info' -Detail 'NotChecked. The user does not exist yet, so there is nothing to check.'
         }
     }
     else {

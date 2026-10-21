@@ -3,8 +3,9 @@ function Add-AirlockLogEntry {
     .SYNOPSIS
         Records one change log entry on a run.
     .DESCRIPTION
-        Status is one of Applied, Skipped, WhatIf, Failed or Info. Never pass secrets
-        such as passwords in Detail.
+        Status is one of Applied, Skipped (already in place or not changeable), WhatIf,
+        Failed, Info (a check that changes nothing) or Declined (the operator said no
+        at a confirmation prompt). Never pass secrets such as passwords in Detail.
     #>
     [CmdletBinding()]
     param(
@@ -18,7 +19,7 @@ function Add-AirlockLogEntry {
         [string]$Action,
 
         [Parameter(Mandatory)]
-        [ValidateSet('Applied', 'Skipped', 'WhatIf', 'Failed', 'Info')]
+        [ValidateSet('Applied', 'Skipped', 'WhatIf', 'Failed', 'Info', 'Declined')]
         [string]$Status,
 
         [string]$Detail = ''
